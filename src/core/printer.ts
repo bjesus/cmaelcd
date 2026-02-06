@@ -101,3 +101,50 @@ export function printFormulaSetCompact(fs: FormulaSet): string {
   const items = fs.toArray().map(printFormula);
   return `{${items.join(", ")}}`;
 }
+
+// ============================================================
+// LaTeX output (for KaTeX rendering in browser)
+// ============================================================
+
+/**
+ * Print a formula as a LaTeX string suitable for KaTeX rendering.
+ */
+export function printFormulaLatex(f: Formula): string {
+  switch (f.kind) {
+    case "atom":
+      return f.name;
+
+    case "not":
+      if (f.sub.kind === "and" || f.sub.kind === "not") {
+        return `\\neg(${printFormulaLatex(f.sub)})`;
+      }
+      return `\\neg ${printFormulaLatex(f.sub)}`;
+
+    case "and":
+      return `(${printFormulaLatex(f.left)} \\wedge ${printFormulaLatex(f.right)})`;
+
+    case "D":
+      if (f.coalition.length === 1) {
+        return `\\mathbf{K}_{${f.coalition[0]}} ${printFormulaLatexWrapped(f.sub)}`;
+      }
+      return `\\mathbf{D}_{\\{${f.coalition.join(",")}\\}} ${printFormulaLatexWrapped(f.sub)}`;
+
+    case "C":
+      return `\\mathbf{C}_{\\{${f.coalition.join(",")}\\}} ${printFormulaLatexWrapped(f.sub)}`;
+  }
+}
+
+function printFormulaLatexWrapped(f: Formula): string {
+  if (f.kind === "and" || (f.kind === "not" && f.sub.kind === "and")) {
+    return `(${printFormulaLatex(f)})`;
+  }
+  return printFormulaLatex(f);
+}
+
+/**
+ * Print a formula set as LaTeX.
+ */
+export function printFormulaSetLatex(fs: FormulaSet): string {
+  const items = fs.toArray().map(printFormulaLatex);
+  return `\\{${items.join(",\\; ")}\\}`;
+}

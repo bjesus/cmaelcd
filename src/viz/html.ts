@@ -1,247 +1,464 @@
 /**
  * Generate a standalone HTML file for visualizing tableau results.
- * Uses inline SVG with a simple force-directed layout.
+ * Clean, light design aimed at logic students. Uses KaTeX for formula rendering.
  */
 
 import { type TableauResult } from "../core/types.ts";
-import { printFormula, printFormulaSet } from "../core/printer.ts";
+import { printFormula, printFormulaSet, printFormulaLatex } from "../core/printer.ts";
 import { toDot } from "./text.ts";
 
-/**
- * Generate a standalone HTML page for interactive tableau visualization.
- * Includes the solver inline so it can also accept new input.
- */
 export function generateHTML(result?: TableauResult): string {
-  const initialDot = result ? toDot(result, "final") : "";
-  const initialSummary = result
-    ? JSON.stringify({
-        satisfiable: result.satisfiable,
-        formula: printFormula(result.inputFormula),
-        agents: result.agents,
-        pretableauStates: result.pretableau.states.size,
-        pretableauPrestates: result.pretableau.prestates.size,
-        initialStates: result.initialTableau.states.size,
-        initialEdges: result.initialTableau.edges.length,
-        finalStates: result.finalTableau.states.size,
-        finalEdges: result.finalTableau.edges.length,
-      })
-    : "null";
-
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CMAEL(CD) Tableau Solver</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"><\/script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Courier New', monospace; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
-  h1 { color: #e94560; margin-bottom: 20px; font-size: 1.5em; }
-  .container { max-width: 1000px; margin: 0 auto; }
-  .input-section { background: #16213e; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-  .input-section label { display: block; margin-bottom: 8px; color: #a0a0a0; }
-  .input-section input[type="text"] {
-    width: 100%; padding: 10px; background: #0f3460; border: 1px solid #533483;
-    color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 14px;
-    border-radius: 4px; margin-bottom: 10px;
-  }
-  .input-section input[type="text"]:focus { outline: none; border-color: #e94560; }
-  .btn {
-    padding: 8px 20px; background: #e94560; color: white; border: none;
-    border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 14px;
-    margin-right: 10px;
-  }
-  .btn:hover { background: #c73652; }
-  .btn.secondary { background: #533483; }
-  .btn.secondary:hover { background: #432a6b; }
-  .result-section { background: #16213e; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-  .result-sat { color: #4ecca3; font-weight: bold; font-size: 1.2em; }
-  .result-unsat { color: #e94560; font-weight: bold; font-size: 1.2em; }
-  .stats { color: #a0a0a0; margin-top: 10px; }
-  .stats div { margin: 4px 0; }
-  .phase-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
-  .phase-tab {
-    padding: 6px 16px; background: #0f3460; border: 1px solid #533483;
-    color: #a0a0a0; cursor: pointer; border-radius: 4px 4px 0 0; font-family: inherit;
-  }
-  .phase-tab.active { background: #533483; color: #e0e0e0; }
-  .graph-container {
-    background: #0f3460; border-radius: 0 0 8px 8px; padding: 20px;
-    min-height: 200px; overflow: auto;
-  }
-  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
-  .help { background: #16213e; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-  .help h3 { color: #e94560; margin-bottom: 10px; }
-  .help code { background: #0f3460; padding: 2px 6px; border-radius: 3px; color: #4ecca3; }
-  .examples { margin-top: 10px; }
-  .examples button {
-    display: block; width: 100%; text-align: left; padding: 6px 10px;
-    background: #0f3460; border: 1px solid #533483; color: #a0a0a0;
-    cursor: pointer; margin: 4px 0; border-radius: 4px; font-family: inherit;
-  }
-  .examples button:hover { background: #1a3a6e; color: #e0e0e0; }
-  #dot-output { background: #0a0a1a; padding: 10px; border-radius: 4px; margin-top: 10px; }
-  .states-list { margin-top: 10px; }
-  .state-item {
-    padding: 6px 10px; margin: 4px 0; background: #0a0a1a; border-radius: 4px;
-    font-size: 11px; border-left: 3px solid #533483;
-  }
-  .state-item.has-input { border-left-color: #4ecca3; }
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-alt: #f5f5f5;
+  --border: #e0e0e0;
+  --text: #333333;
+  --text-muted: #777777;
+  --accent: #4a6fa5;
+  --accent-light: #e8eef6;
+  --sat: #2e7d32;
+  --sat-bg: #e8f5e9;
+  --unsat: #c62828;
+  --unsat-bg: #ffebee;
+  --highlight: #fff3e0;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg); color: var(--text);
+  line-height: 1.6; padding: 0;
+}
+.header {
+  background: var(--accent); color: white;
+  padding: 24px 32px; text-align: center;
+}
+.header h1 { font-size: 1.4em; font-weight: 600; letter-spacing: 0.02em; }
+.header p { font-size: 0.85em; opacity: 0.85; margin-top: 4px; }
+.container { max-width: 860px; margin: 0 auto; padding: 24px 20px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px;
+  margin-bottom: 20px; box-shadow: var(--shadow);
+}
+.card h2 {
+  font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted); margin-bottom: 16px; font-weight: 600;
+}
+label { display: block; font-size: 0.85em; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+input[type="text"] {
+  width: 100%; padding: 10px 14px; border: 1.5px solid var(--border);
+  border-radius: 6px; font-size: 15px; font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  background: var(--surface); color: var(--text); transition: border-color 0.15s;
+}
+input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+input[type="text"]::placeholder { color: #bbb; }
+.input-row { display: flex; gap: 12px; margin-bottom: 12px; }
+.input-row > div { flex: 1; }
+.input-row > div:first-child { flex: 2; }
+.checkbox-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.85em; color: var(--text-muted); cursor: pointer; user-select: none;
+}
+.checkbox-label input { accent-color: var(--accent); }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 24px; background: var(--accent); color: white; border: none;
+  border-radius: 6px; cursor: pointer; font-size: 0.9em; font-weight: 500;
+  font-family: inherit; transition: background 0.15s;
+}
+.btn:hover { background: #3d5d8a; }
+.btn:active { transform: translateY(1px); }
+.actions { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+
+/* Syntax reference */
+.syntax-ref {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  font-size: 0.82em; color: var(--text-muted);
+}
+.syntax-ref code {
+  background: var(--surface-alt); padding: 2px 6px; border-radius: 3px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.95em; color: var(--text);
+}
+.syntax-item { display: flex; align-items: baseline; gap: 6px; }
+.syntax-item .katex { font-size: 0.95em; }
+
+/* Examples */
+.examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.example-btn {
+  padding: 5px 12px; background: var(--accent-light); border: 1px solid var(--border);
+  color: var(--accent); border-radius: 16px; cursor: pointer; font-size: 0.8em;
+  font-family: inherit; transition: all 0.15s; white-space: nowrap;
+}
+.example-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+/* Result */
+.result-banner {
+  padding: 16px 20px; border-radius: var(--radius); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 12px; font-weight: 600;
+}
+.result-banner.sat { background: var(--sat-bg); color: var(--sat); border: 1px solid #c8e6c9; }
+.result-banner.unsat { background: var(--unsat-bg); color: var(--unsat); border: 1px solid #ffcdd2; }
+.result-banner .icon { font-size: 1.4em; }
+.result-formula { margin-top: 4px; font-weight: 400; }
+
+/* Stats */
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.stat-box {
+  background: var(--surface-alt); border-radius: 6px; padding: 12px; text-align: center;
+}
+.stat-box .num { font-size: 1.4em; font-weight: 700; color: var(--accent); }
+.stat-box .label { font-size: 0.75em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Phase tabs */
+.phase-tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
+.phase-tab {
+  padding: 8px 20px; background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-family: inherit; font-size: 0.85em; font-weight: 500;
+  border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s;
+}
+.phase-tab:hover { color: var(--text); }
+.phase-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* State list */
+.state-list { display: flex; flex-direction: column; gap: 8px; }
+.state-item {
+  padding: 10px 14px; background: var(--surface-alt); border-radius: 6px;
+  border-left: 3px solid var(--border); font-size: 0.9em;
+  overflow-x: auto;
+}
+.state-item.has-input { border-left-color: var(--accent); background: var(--highlight); }
+.state-id { font-weight: 600; color: var(--accent); font-size: 0.8em; margin-bottom: 4px; }
+.state-formulas .katex { font-size: 0.88em; }
+.edge-item {
+  padding: 8px 14px; background: var(--surface-alt); border-radius: 6px;
+  font-size: 0.85em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.edge-arrow { color: var(--text-muted); font-weight: 500; }
+.edge-label { color: var(--accent); }
+
+.empty-notice {
+  padding: 24px; text-align: center; color: var(--text-muted);
+  font-style: italic; font-size: 0.9em;
+}
+
+.section-label {
+  font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted); font-weight: 600; margin: 16px 0 8px;
+}
+
+/* DOT output */
+.dot-toggle {
+  font-size: 0.8em; color: var(--accent); cursor: pointer; background: none;
+  border: none; font-family: inherit; text-decoration: underline; margin-top: 12px;
+}
+.dot-box {
+  margin-top: 8px; background: var(--surface-alt); border-radius: 6px; padding: 12px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75em; white-space: pre-wrap;
+  max-height: 200px; overflow: auto; display: none;
+}
+
+#result-section { display: none; }
+
+/* Loading */
+.loading { display: none; color: var(--text-muted); font-style: italic; }
+
+@media (max-width: 600px) {
+  .input-row { flex-direction: column; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .syntax-ref { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
+
+<div class="header">
+  <h1>Epistemic Logic Tableau Solver</h1>
+  <p>Satisfiability checker for CMAEL(CD) &mdash; multiagent epistemic logic with common and distributed knowledge</p>
+</div>
+
 <div class="container">
-  <h1>CMAEL(CD) Tableau Decision Procedure</h1>
 
-  <div class="help">
-    <h3>Syntax</h3>
-    <div>
-      Negation: <code>~p</code> |
-      Conjunction: <code>(p & q)</code> |
-      Disjunction: <code>(p | q)</code> |
-      Implication: <code>(p -> q)</code>
+  <!-- Syntax Reference -->
+  <div class="card">
+    <h2>Syntax Reference</h2>
+    <div class="syntax-ref">
+      <div class="syntax-item"><code>p</code> &mdash; atomic proposition</div>
+      <div class="syntax-item"><code>~p</code> &mdash; <span class="katex-placeholder" data-tex="\\neg p"></span></div>
+      <div class="syntax-item"><code>(p & q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\wedge q)"></span></div>
+      <div class="syntax-item"><code>(p | q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\vee q)"></span></div>
+      <div class="syntax-item"><code>(p -> q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\to q)"></span></div>
+      <div class="syntax-item"><code>Ka p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{K}_a\\, p"></span> (agent <em>a</em> knows <em>p</em>)</div>
+      <div class="syntax-item"><code>D{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{D}_{\\{a,b\\}}\\, p"></span> (distributed knowledge)</div>
+      <div class="syntax-item"><code>C{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{C}_{\\{a,b\\}}\\, p"></span> (common knowledge)</div>
     </div>
-    <div style="margin-top:6px">
-      Individual knowledge: <code>Ka p</code> |
-      Distributed: <code>D{a,b} p</code> |
-      Common: <code>C{a,b} p</code>
-    </div>
+
     <div class="examples">
-      <strong>Examples:</strong>
-      <button onclick="setInput('(~D{a,c} C{a,b} p & C{a,b} (p & q))')">Ex 3: ~D{a,c} C{a,b} p & C{a,b} (p & q) [UNSAT]</button>
-      <button onclick="setInput('(~D{a,b} p & ~D{a,c} ~Ka p)')">Ex 4: ~D{a,b} p & ~D{a,c} ~Ka p [UNSAT]</button>
-      <button onclick="setInput('(C{a,b} Ka p -> ~C{b,c} Kb p)')">Ex 5: C{a,b} Ka p -> ~C{b,c} Kb p</button>
-      <button onclick="setInput('(Ka p & ~Kb p)')">Ka p & ~Kb p [SAT]</button>
-      <button onclick="setInput('C{a,b} p')">C{a,b} p [SAT]</button>
-      <button onclick="setInput('(Ka p & ~p)')">Ka p & ~p [UNSAT - veridicality]</button>
+      <button class="example-btn" onclick="setExample('(Ka p & ~Kb p)', '')">Ka p and not Kb p</button>
+      <button class="example-btn" onclick="setExample('C{a,b} p', '')">Common knowledge</button>
+      <button class="example-btn" onclick="setExample('(Ka p & ~p)', '')">Veridicality violation</button>
+      <button class="example-btn" onclick="setExample('(~D{a,c} C{a,b} p & C{a,b} (p & q))', 'a,b,c')">Paper Ex. 3</button>
+      <button class="example-btn" onclick="setExample('(~D{a,b} p & ~D{a,c} ~Ka p)', 'a,b,c')">Paper Ex. 4</button>
+      <button class="example-btn" onclick="setExample('(C{a,b} Ka p -> ~C{b,c} Kb p)', 'a,b,c')">Paper Ex. 5</button>
     </div>
   </div>
 
-  <div class="input-section">
-    <label>Formula:</label>
-    <input type="text" id="formula-input" placeholder="e.g. (Ka p & ~Kb p)" value="" />
-    <label>Agents (optional, comma-separated):</label>
-    <input type="text" id="agents-input" placeholder="e.g. a,b,c (leave empty to auto-detect)" value="" />
-    <div>
-      <label style="display:inline"><input type="checkbox" id="restricted-cuts" checked /> Use restricted cuts (C1/C2)</label>
+  <!-- Input -->
+  <div class="card">
+    <h2>Input</h2>
+    <div class="input-row">
+      <div>
+        <label for="formula-input">Formula</label>
+        <input type="text" id="formula-input" placeholder="e.g.  (Ka p & ~Kb p)" autocomplete="off" spellcheck="false" />
+      </div>
+      <div>
+        <label for="agents-input">Agents <span style="font-weight:400">(optional)</span></label>
+        <input type="text" id="agents-input" placeholder="e.g. a,b,c" autocomplete="off" spellcheck="false" />
+      </div>
     </div>
-    <div style="margin-top:10px">
-      <button class="btn" onclick="solve()">Solve</button>
+    <div class="actions">
+      <button class="btn" id="solve-btn" onclick="solve()">Check Satisfiability</button>
+      <label class="checkbox-label">
+        <input type="checkbox" id="restricted-cuts" checked />
+        Restricted cuts (C1/C2)
+      </label>
+      <span class="loading" id="loading">Solving...</span>
+    </div>
+    <div id="parse-error" style="color:var(--unsat);font-size:0.85em;margin-top:8px;display:none"></div>
+  </div>
+
+  <!-- Result -->
+  <div id="result-section">
+
+    <div id="result-banner" class="result-banner"></div>
+
+    <div class="card">
+      <h2>Tableau Statistics</h2>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="num" id="stat-pre-states">-</div>
+          <div class="label">Pretableau States</div>
+        </div>
+        <div class="stat-box">
+          <div class="num" id="stat-init-states">-</div>
+          <div class="label">Initial Tableau</div>
+        </div>
+        <div class="stat-box">
+          <div class="num" id="stat-final-states">-</div>
+          <div class="label">Final Tableau</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tableau Details</h2>
+      <div class="phase-tabs">
+        <button class="phase-tab active" data-phase="final" onclick="showPhase('final', this)">Final Tableau</button>
+        <button class="phase-tab" data-phase="initial" onclick="showPhase('initial', this)">Initial Tableau</button>
+        <button class="phase-tab" data-phase="pretableau" onclick="showPhase('pretableau', this)">Pretableau</button>
+      </div>
+      <div id="phase-content"></div>
+      <button class="dot-toggle" onclick="toggleDot()">Show DOT (Graphviz) output</button>
+      <div id="dot-box" class="dot-box"></div>
     </div>
   </div>
 
-  <div id="result-section" class="result-section" style="display:none">
-    <div id="result-label"></div>
-    <div id="result-stats" class="stats"></div>
-
-    <div class="phase-tabs" style="margin-top:15px">
-      <button class="phase-tab active" onclick="showPhase('final')">Final Tableau</button>
-      <button class="phase-tab" onclick="showPhase('initial')">Initial Tableau</button>
-      <button class="phase-tab" onclick="showPhase('pretableau')">Pretableau</button>
-    </div>
-    <div class="graph-container">
-      <div id="states-display"></div>
-      <div id="dot-output"><pre id="dot-content"></pre></div>
-    </div>
-  </div>
 </div>
 
 <script>
-// The core solver is loaded inline (bundled)
-// For now, we'll communicate with a simple postMessage or direct call
 let lastResult = null;
+let currentPhase = 'final';
 
-function setInput(formula) {
+function setExample(formula, agents) {
   document.getElementById('formula-input').value = formula;
+  document.getElementById('agents-input').value = agents;
+  solve();
 }
 
-function showPhase(phase) {
+function renderLatex(container, tex) {
+  try {
+    katex.render(tex, container, { throwOnError: false, displayMode: false });
+  } catch(e) {
+    container.textContent = tex;
+  }
+}
+
+// Render all placeholders on load
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.katex-placeholder').forEach(function(el) {
+    renderLatex(el, el.dataset.tex);
+  });
+  // Focus formula input
+  document.getElementById('formula-input').focus();
+});
+
+// Enter key to solve
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && document.activeElement &&
+      (document.activeElement.id === 'formula-input' || document.activeElement.id === 'agents-input')) {
+    solve();
+  }
+});
+
+function showPhase(phase, btn) {
+  currentPhase = phase;
   document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
+  if (btn) btn.classList.add('active');
   if (lastResult) displayPhase(lastResult, phase);
 }
 
 function displayPhase(result, phase) {
-  const statesDisplay = document.getElementById('states-display');
-  const dotContent = document.getElementById('dot-content');
+  const container = document.getElementById('phase-content');
+  let html = '';
 
   let states, edges;
   if (phase === 'pretableau') {
     states = result.pretableau.states;
     edges = result.pretableau.solidEdges;
-    let html = '<strong>States (' + Object.keys(states).length + '):</strong>';
-    for (const [id, state] of Object.entries(states)) {
-      const hasInput = state.hasInput;
-      html += '<div class="state-item' + (hasInput ? ' has-input' : '') + '">' + id + ': ' + state.formulas + '</div>';
+    const prestates = result.pretableau.prestates;
+
+    html += '<div class="section-label">States (' + Object.keys(states).length + ')</div>';
+    html += '<div class="state-list">';
+    if (Object.keys(states).length === 0) {
+      html += '<div class="empty-notice">No states were created (all expansions were inconsistent)</div>';
     }
-    html += '<br><strong>Prestates (' + Object.keys(result.pretableau.prestates).length + '):</strong>';
-    for (const [id, ps] of Object.entries(result.pretableau.prestates)) {
-      html += '<div class="state-item">' + id + ': ' + ps.formulas + '</div>';
+    for (const [id, s] of Object.entries(states)) {
+      html += '<div class="state-item' + (s.hasInput ? ' has-input' : '') + '">';
+      html += '<div class="state-id">' + id + '</div>';
+      html += '<div class="state-formulas" data-tex="' + escAttr(s.formulasLatex) + '"></div>';
+      html += '</div>';
     }
-    statesDisplay.innerHTML = html;
+    html += '</div>';
+
+    html += '<div class="section-label">Prestates (' + Object.keys(prestates).length + ')</div>';
+    html += '<div class="state-list">';
+    for (const [id, s] of Object.entries(prestates)) {
+      html += '<div class="state-item" style="border-left-color:#999;border-style:dashed">';
+      html += '<div class="state-id">' + id + ' (prestate)</div>';
+      html += '<div class="state-formulas" data-tex="' + escAttr(s.formulasLatex) + '"></div>';
+      html += '</div>';
+    }
+    html += '</div>';
   } else {
     const tab = phase === 'initial' ? result.initialTableau : result.finalTableau;
     states = tab.states;
     edges = tab.edges;
-    let html = '<strong>States (' + Object.keys(states).length + '):</strong>';
+
+    html += '<div class="section-label">States (' + Object.keys(states).length + ')</div>';
+    html += '<div class="state-list">';
     if (Object.keys(states).length === 0) {
-      html += '<div class="state-item">(empty - all states eliminated)</div>';
+      html += '<div class="empty-notice">All states were eliminated &mdash; the formula is unsatisfiable</div>';
     }
-    for (const [id, state] of Object.entries(states)) {
-      const hasInput = state.hasInput;
-      html += '<div class="state-item' + (hasInput ? ' has-input' : '') + '">' + id + ': ' + state.formulas + '</div>';
+    for (const [id, s] of Object.entries(states)) {
+      html += '<div class="state-item' + (s.hasInput ? ' has-input' : '') + '">';
+      html += '<div class="state-id">' + id + (s.hasInput ? ' (contains input formula)' : '') + '</div>';
+      html += '<div class="state-formulas" data-tex="' + escAttr(s.formulasLatex) + '"></div>';
+      html += '</div>';
     }
-    html += '<br><strong>Edges (' + Object.keys(edges).length + '):</strong>';
-    for (const [idx, edge] of Object.entries(edges)) {
-      html += '<div class="state-item">' + edge.from + ' --[' + edge.label + ']--> ' + edge.to + '</div>';
+    html += '</div>';
+
+    html += '<div class="section-label">Edges (' + edges.length + ')</div>';
+    html += '<div class="state-list">';
+    if (edges.length === 0 && Object.keys(states).length > 0) {
+      html += '<div class="empty-notice">No transition edges</div>';
+    } else if (edges.length === 0) {
+      html += '<div class="empty-notice">No edges remain</div>';
     }
-    statesDisplay.innerHTML = html;
+    for (const e of edges) {
+      html += '<div class="edge-item">';
+      html += '<span style="font-weight:600;color:var(--accent)">' + e.from + '</span>';
+      html += '<span class="edge-arrow">&xrarr;</span>';
+      html += '<span style="font-weight:600;color:var(--accent)">' + e.to + '</span>';
+      html += '<span style="color:var(--text-muted);font-size:0.85em">via</span>';
+      html += '<span class="edge-label" data-tex="' + escAttr(e.labelLatex) + '"></span>';
+      html += '</div>';
+    }
+    html += '</div>';
   }
 
-  dotContent.textContent = result.dots[phase] || '';
+  container.innerHTML = html;
+
+  // Render KaTeX in new elements
+  container.querySelectorAll('[data-tex]').forEach(function(el) {
+    renderLatex(el, el.dataset.tex);
+  });
+
+  // Update DOT
+  const dotBox = document.getElementById('dot-box');
+  dotBox.textContent = result.dots[phase] || '';
 }
 
-async function solve() {
+function escAttr(s) {
+  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleDot() {
+  const box = document.getElementById('dot-box');
+  box.style.display = box.style.display === 'none' || !box.style.display ? 'block' : 'none';
+}
+
+function solve() {
   const formula = document.getElementById('formula-input').value.trim();
-  if (!formula) { alert('Please enter a formula'); return; }
+  if (!formula) return;
 
   const agentsStr = document.getElementById('agents-input').value.trim();
   const restrictedCuts = document.getElementById('restricted-cuts').checked;
+  const errorEl = document.getElementById('parse-error');
+  errorEl.style.display = 'none';
 
   try {
-    const response = await solveFormula(formula, agentsStr, restrictedCuts);
-    lastResult = response;
+    const result = solveFormula(formula, agentsStr, restrictedCuts);
+    lastResult = result;
 
     const section = document.getElementById('result-section');
     section.style.display = 'block';
 
-    const label = document.getElementById('result-label');
-    if (response.satisfiable) {
-      label.className = 'result-sat';
-      label.textContent = 'SATISFIABLE';
+    const banner = document.getElementById('result-banner');
+    if (result.satisfiable) {
+      banner.className = 'result-banner sat';
+      banner.innerHTML = '<span class="icon">&#10003;</span><div><div>Satisfiable</div>' +
+        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>';
     } else {
-      label.className = 'result-unsat';
-      label.textContent = 'UNSATISFIABLE';
+      banner.className = 'result-banner unsat';
+      banner.innerHTML = '<span class="icon">&#10007;</span><div><div>Unsatisfiable</div>' +
+        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>';
     }
+    banner.querySelectorAll('[data-tex]').forEach(function(el) {
+      renderLatex(el, el.dataset.tex);
+    });
 
-    const stats = document.getElementById('result-stats');
-    stats.innerHTML =
-      '<div>Pretableau: ' + response.stats.pretableauStates + ' states, ' + response.stats.pretableauPrestates + ' prestates</div>' +
-      '<div>Initial tableau: ' + response.stats.initialStates + ' states, ' + response.stats.initialEdges + ' edges</div>' +
-      '<div>Final tableau: ' + response.stats.finalStates + ' states, ' + response.stats.finalEdges + ' edges</div>';
+    document.getElementById('stat-pre-states').textContent = result.stats.pretableauStates;
+    document.getElementById('stat-init-states').textContent = result.stats.initialStates;
+    document.getElementById('stat-final-states').textContent = result.stats.finalStates;
 
-    displayPhase(response, 'final');
-  } catch (e) {
-    alert('Error: ' + e.message);
+    // Reset to final tab
+    document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('.phase-tab[data-phase="final"]').classList.add('active');
+    displayPhase(result, 'final');
+
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch(e) {
+    errorEl.textContent = e.message;
+    errorEl.style.display = 'block';
   }
 }
 
-// This function will be replaced by the bundled solver
-async function solveFormula(formula, agentsStr, restrictedCuts) {
-  // Placeholder - will be replaced by actual solver code
-  throw new Error('Solver not loaded. Please use the bundled version.');
+// Placeholder solver — replaced by bundled code
+function solveFormula(f, a, r) {
+  throw new Error('Solver not loaded. Build with: bun run src/build-html.ts');
 }
-</script>
+<\/script>
 </body>
 </html>`;
 }
