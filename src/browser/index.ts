@@ -7,26 +7,16 @@ import { parseFormula } from "../core/parser.ts";
 import { printFormula, printFormulaSet, printFormulaLatex, printFormulaSetLatex } from "../core/printer.ts";
 import { runTableau } from "../core/tableau.ts";
 import { toDot } from "../viz/text.ts";
-import type { Coalition, TableauResult } from "../core/types.ts";
+import type { TableauResult } from "../core/types.ts";
 
 // Expose solver to the global scope for the HTML page
 (globalThis as any).solveFormula = function (
   formulaStr: string,
-  agentsStr: string,
+  _agentsStr: string, // kept for backward compat with HTML caller
   restrictedCuts: boolean
 ) {
   const formula = parseFormula(formulaStr);
-
-  let agents: Coalition | undefined;
-  if (agentsStr) {
-    agents = agentsStr
-      .split(",")
-      .map((s: string) => s.trim())
-      .filter(Boolean)
-      .sort();
-  }
-
-  const result = runTableau(formula, agents, restrictedCuts);
+  const result = runTableau(formula, restrictedCuts);
   return serializeResult(result);
 };
 

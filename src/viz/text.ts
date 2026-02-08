@@ -11,6 +11,7 @@ import {
   type FormulaSet,
 } from "../core/types.ts";
 import { printFormula, printFormulaSet, printFormulaUnicode } from "../core/printer.ts";
+import { agentsInFormula } from "../core/formula.ts";
 
 /**
  * Generate a complete text summary of a tableau result.
@@ -23,7 +24,8 @@ export function textSummary(result: TableauResult): string {
   lines.push("=".repeat(60));
   lines.push("");
   lines.push(`Input formula: ${printFormula(result.inputFormula)}`);
-  lines.push(`Agents: {${result.agents.join(", ")}}`);
+  const agents = [...agentsInFormula(result.inputFormula)].sort();
+  lines.push(`Agents: {${agents.join(", ")}}`);
   lines.push("");
 
   // Pretableau summary

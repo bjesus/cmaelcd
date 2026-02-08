@@ -87,7 +87,6 @@ Exit code: `0` if satisfiable, `1` if unsatisfiable.
 ### Options
 
 ```
---agents <a,b,c>                  Specify agent set (default: auto-detect from formula)
 --verbose, -v                     Show detailed output for all phases
 --dot [pretableau|initial|final]  Output DOT (Graphviz) graph
 --html                            Output standalone HTML visualization
@@ -104,8 +103,8 @@ bun run src/index.ts "(Ka p & ~Kb p)"
 # Unsatisfiable — violates veridicality (knowledge implies truth)
 bun run src/index.ts "(Ka p & ~p)"
 
-# Paper Example 3 with explicit agents
-bun run src/index.ts "(~D{a,c} C{a,b} p & C{a,b} (p & q))" --agents a,b,c
+# Paper Example 3 (unsatisfiable)
+bun run src/index.ts "(~D{a,c} C{a,b} p & C{a,b} (p & q))"
 
 # Verbose output showing all states in each phase
 bun run src/index.ts "C{a,b} p" --verbose

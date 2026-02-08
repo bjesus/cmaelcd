@@ -235,6 +235,5 @@ export interface TableauResult {
   pretableau: Pretableau;
   initialTableau: Tableau;
   finalTableau: Tableau;
-  agents: Coalition;
   inputFormula: Formula;
 }

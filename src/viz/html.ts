@@ -81,9 +81,7 @@ input[type="text"] {
 }
 input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
 input[type="text"]::placeholder { color: #bbb; }
-.input-row { display: flex; gap: 12px; margin-bottom: 12px; }
-.input-row > div { flex: 1; }
-.input-row > div:first-child { flex: 2; }
+
 .checkbox-label {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 0.85em; color: var(--text-muted); cursor: pointer; user-select: none;
@@ -296,7 +294,6 @@ input[type="text"]::placeholder { color: #bbb; }
 .loading { display: none; color: var(--text-muted); font-style: italic; }
 
 @media (max-width: 600px) {
-  .input-row { flex-direction: column; }
   .stats-grid { grid-template-columns: 1fr; }
   .syntax-ref { grid-template-columns: 1fr; }
 }
@@ -332,27 +329,21 @@ input[type="text"]::placeholder { color: #bbb; }
     </div>
 
     <div class="examples">
-      <button class="example-btn" onclick="setExample('(Ka p & ~Kb p)', '')">Ka p and not Kb p</button>
-      <button class="example-btn" onclick="setExample('C{a,b} p', '')">Common knowledge</button>
-      <button class="example-btn" onclick="setExample('(Ka p & ~p)', '')">Veridicality violation</button>
-      <button class="example-btn" onclick="setExample('(~D{a,c} C{a,b} p & C{a,b} (p & q))', 'a,b,c')">Paper Ex. 3</button>
-      <button class="example-btn" onclick="setExample('(~D{a,b} p & ~D{a,c} ~Ka p)', 'a,b,c')">Paper Ex. 4</button>
-      <button class="example-btn" onclick="setExample('(C{a,b} Ka p -> ~C{b,c} Kb p)', 'a,b,c')">Paper Ex. 5</button>
+      <button class="example-btn" onclick="setExample('(Ka p & ~Kb p)')">Ka p and not Kb p</button>
+      <button class="example-btn" onclick="setExample('C{a,b} p')">Common knowledge</button>
+      <button class="example-btn" onclick="setExample('(Ka p & ~p)')">Veridicality violation</button>
+      <button class="example-btn" onclick="setExample('(~D{a,c} C{a,b} p & C{a,b} (p & q))')">Paper Ex. 3</button>
+      <button class="example-btn" onclick="setExample('(~D{a,b} p & ~D{a,c} ~Ka p)')">Paper Ex. 4</button>
+      <button class="example-btn" onclick="setExample('(C{a,b} Ka p -> ~C{b,c} Kb p)')">Paper Ex. 5</button>
     </div>
   </div>
 
   <!-- Input -->
   <div class="card">
     <h2>Input</h2>
-    <div class="input-row">
-      <div>
-        <label for="formula-input">Formula</label>
-        <input type="text" id="formula-input" placeholder="e.g.  (Ka p & ~Kb p)" autocomplete="off" spellcheck="false" />
-      </div>
-      <div>
-        <label for="agents-input">Agents <span style="font-weight:400">(optional)</span></label>
-        <input type="text" id="agents-input" placeholder="e.g. a,b,c" autocomplete="off" spellcheck="false" />
-      </div>
+    <div>
+      <label for="formula-input">Formula</label>
+      <input type="text" id="formula-input" placeholder="e.g.  (Ka p & ~Kb p)" autocomplete="off" spellcheck="false" />
     </div>
     <div class="actions">
       <button class="btn" id="solve-btn" onclick="solve()">Check Satisfiability</button>
@@ -755,9 +746,8 @@ function closeAboutModal() {
   }
 }
 
-function setExample(formula, agents) {
+function setExample(formula) {
   document.getElementById('formula-input').value = formula;
-  document.getElementById('agents-input').value = agents;
   solve();
 }
 
@@ -780,8 +770,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Enter key to solve
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && document.activeElement &&
-      (document.activeElement.id === 'formula-input' || document.activeElement.id === 'agents-input')) {
+  if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'formula-input') {
     solve();
   }
 });
@@ -892,13 +881,12 @@ function solve() {
   const formula = document.getElementById('formula-input').value.trim();
   if (!formula) return;
 
-  const agentsStr = document.getElementById('agents-input').value.trim();
   const restrictedCuts = document.getElementById('restricted-cuts').checked;
   const errorEl = document.getElementById('parse-error');
   errorEl.style.display = 'none';
 
   try {
-    const result = solveFormula(formula, agentsStr, restrictedCuts);
+    const result = solveFormula(formula, '', restrictedCuts);
     lastResult = result;
 
     const section = document.getElementById('result-section');

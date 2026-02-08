@@ -7,7 +7,6 @@
  *   bun run src/index.ts --help
  *
  * Options:
- *   --agents <a,b,c>       Specify agent set (default: inferred from formula)
  *   --verbose              Show all phases in detail
  *   --dot [phase]          Output DOT graph (pretableau|initial|final)
  *   --html                 Output standalone HTML visualization
@@ -20,7 +19,6 @@ import { printFormula } from "./core/printer.ts";
 import { runTableau } from "./core/tableau.ts";
 import { textSummary, textVerbose, toDot } from "./viz/text.ts";
 import { generateHTML } from "./viz/html.ts";
-import type { Coalition } from "./core/types.ts";
 
 const args = process.argv.slice(2);
 
@@ -37,13 +35,6 @@ const dotIndex = args.indexOf("--dot");
 const dotPhase = dotIndex >= 0 ? (args[dotIndex + 1] as "pretableau" | "initial" | "final" || "final") : null;
 const htmlOutput = args.includes("--html");
 
-// Extract --agents
-const agentsIndex = args.indexOf("--agents");
-let agents: Coalition | undefined;
-if (agentsIndex >= 0 && args[agentsIndex + 1]) {
-  agents = args[agentsIndex + 1]!.split(",").map((s) => s.trim()).filter(Boolean).sort();
-}
-
 if (interactive) {
   runInteractive();
 } else {
@@ -57,7 +48,7 @@ if (interactive) {
 }
 
 function extractFormulaArg(args: string[]): string | null {
-  const skipNext = new Set(["--agents", "--dot"]);
+  const skipNext = new Set(["--dot"]);
   const skipFlags = new Set([
     "--verbose", "-v", "--no-restricted-cuts", "--interactive", "-i",
     "--html", "--help", "-h",
@@ -86,7 +77,7 @@ function solveAndPrint(formulaStr: string): void {
     process.exit(1);
   }
 
-  const result = runTableau(formula, agents, useRestrictedCuts);
+  const result = runTableau(formula, useRestrictedCuts);
 
   if (htmlOutput) {
     console.log(generateHTML(result));
@@ -151,7 +142,6 @@ Usage:
   cmael --help                   Show this help
 
 Options:
-  --agents <a,b,c>               Specify agent set (default: auto-detect)
   --verbose, -v                  Show detailed output for all phases
   --dot [pretableau|initial|final]   Output DOT (Graphviz) graph
   --html                         Output standalone HTML visualization
@@ -160,7 +150,7 @@ Options:
 
 Examples:
   cmael "(Ka p & ~Kb p)"
-  cmael "(~D{a,c} C{a,b} p & C{a,b} (p & q))" --agents a,b,c
+  cmael "(~D{a,c} C{a,b} p & C{a,b} (p & q))"
   cmael "(Ka p & ~p)" --verbose
   cmael "C{a,b} p" --dot final > graph.dot
 `);

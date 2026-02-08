@@ -40,7 +40,7 @@ import {
   isEventuality,
   isDiamond,
   getEventualities,
-  agentsInFormula,
+
 } from "./formula.ts";
 
 // Counter for generating unique node IDs
@@ -58,26 +58,14 @@ function resetNodeCounter(): void {
  * Main entry point: run the tableau procedure on a formula.
  *
  * @param theta - The input formula to test for satisfiability
- * @param agents - The set of agents Σ (if not provided, inferred from formula)
  * @param useRestrictedCuts - Whether to use restricted C1/C2 conditions (default: true)
  * @returns TableauResult with all phases recorded
  */
 export function runTableau(
   theta: Formula,
-  agents?: Coalition,
   useRestrictedCuts: boolean = true
 ): TableauResult {
   resetNodeCounter();
-
-  // Infer agents from formula if not provided
-  const agentSet = agents
-    ? [...agents].sort()
-    : [...agentsInFormula(theta)].sort();
-
-  if (agentSet.length < 2) {
-    // The paper notes (p.7) that the single-agent case is trivialized.
-    // We still handle it, but the paper assumes |Σ| >= 2.
-  }
 
   // Phase 1: Construction
   const pretableau = constructionPhase(theta, useRestrictedCuts);
@@ -102,7 +90,6 @@ export function runTableau(
     pretableau,
     initialTableau,
     finalTableau,
-    agents: agentSet,
     inputFormula: theta,
   };
 }
