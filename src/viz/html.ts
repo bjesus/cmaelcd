@@ -196,14 +196,15 @@ input[type="text"]::placeholder { color: #bbb; }
 .result-banner.unsat { background: var(--unsat-bg); color: var(--unsat); border: 1px solid #ffcdd2; }
 .result-banner .icon { font-size: 1.3em; }
 .result-formula { margin-top: 4px; font-weight: 400; }
-
-/* Stats */
-.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-.stat-box {
-  background: var(--surface-alt); border-radius: 6px; padding: 12px; text-align: center;
+.result-banner .banner-stats {
+  margin-left: auto; display: flex; gap: 14px; flex-shrink: 0;
 }
-.stat-box .num { font-size: 1.3em; font-weight: 700; color: var(--accent); }
-.stat-box .label { font-size: 0.72em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.result-banner .banner-stat { text-align: center; line-height: 1.2; }
+.result-banner .banner-stat .num { font-size: 1.1em; font-weight: 700; opacity: 0.7; }
+.result-banner .banner-stat .label {
+  font-size: 0.6em; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.04em; opacity: 0.6;
+}
 
 /* Phase tabs */
 .phase-tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 14px; }
@@ -413,7 +414,8 @@ input[type="text"]::placeholder { color: #bbb; }
   .right-panel { height: auto; overflow: visible; }
   .right-scroll { overflow: visible; padding: 16px; }
   .right-empty { display: none; }
-  .stats-grid { grid-template-columns: 1fr; }
+  .result-banner { flex-wrap: wrap; }
+  .result-banner .banner-stats { width: 100%; justify-content: space-around; margin-top: 8px; }
 }
 </style>
 </head>
@@ -504,29 +506,11 @@ input[type="text"]::placeholder { color: #bbb; }
         <div id="elimination-trace" style="display:none"></div>
 
         <div class="card">
-          <h2>Tableau Statistics</h2>
-          <div class="stats-grid">
-            <div class="stat-box">
-              <div class="num" id="stat-pre-states">-</div>
-              <div class="label">Pretableau States</div>
-            </div>
-            <div class="stat-box">
-              <div class="num" id="stat-init-states">-</div>
-              <div class="label">Initial Tableau</div>
-            </div>
-            <div class="stat-box">
-              <div class="num" id="stat-final-states">-</div>
-              <div class="label">Final Tableau</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
           <div style="display:flex;align-items:center;margin-bottom:14px">
             <h2 style="margin-bottom:0">Tableau Details</h2>
             <div class="view-toggle">
-              <button class="view-toggle-btn active" id="view-list-btn" onclick="setView('list')">List</button>
-              <button class="view-toggle-btn" id="view-graph-btn" onclick="setView('graph')">Graph</button>
+              <button class="view-toggle-btn" id="view-list-btn" onclick="setView('list')">List</button>
+              <button class="view-toggle-btn active" id="view-graph-btn" onclick="setView('graph')">Graph</button>
             </div>
           </div>
           <div class="phase-tabs">
@@ -538,11 +522,11 @@ input[type="text"]::placeholder { color: #bbb; }
             <label><input type="checkbox" id="opt-detailed" onchange="onGraphOptionChange()"> Detailed labels</label>
             <label id="opt-eliminated-label" style="display:none"><input type="checkbox" id="opt-eliminated" onchange="onGraphOptionChange()"> Show eliminated states</label>
           </div>
-          <div id="graph-view" class="graph-container" style="display:none" onclick="openFullscreen()">
+          <div id="graph-view" class="graph-container" onclick="openFullscreen()">
             <div class="graph-loading">Rendering graph...</div>
             <div class="graph-hint">Click to expand</div>
           </div>
-          <div id="phase-content"></div>
+          <div id="phase-content" style="display:none"></div>
           <button class="dot-toggle" onclick="toggleDot()">Show DOT (Graphviz) output</button>
           <div id="dot-box" class="dot-box"></div>
         </div>
@@ -675,7 +659,7 @@ input[type="text"]::placeholder { color: #bbb; }
 <script>
 let lastResult = null;
 let currentPhase = 'final';
-let currentView = 'list';
+let currentView = 'graph';
 let vizInstance = null;
 let vizLoading = false;
 
@@ -1159,22 +1143,23 @@ function solve() {
     if (empty) empty.style.display = 'none';
 
     const banner = document.getElementById('result-banner');
+    var statsHtml = '<div class="banner-stats">' +
+      '<div class="banner-stat"><div class="num">' + result.stats.pretableauStates + '</div><div class="label">Pretableau</div></div>' +
+      '<div class="banner-stat"><div class="num">' + result.stats.initialStates + '</div><div class="label">Initial</div></div>' +
+      '<div class="banner-stat"><div class="num">' + result.stats.finalStates + '</div><div class="label">Final</div></div>' +
+      '</div>';
     if (result.satisfiable) {
       banner.className = 'result-banner sat';
       banner.innerHTML = '<span class="icon">&#10003;</span><div><div>Satisfiable</div>' +
-        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>';
+        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
     } else {
       banner.className = 'result-banner unsat';
       banner.innerHTML = '<span class="icon">&#10007;</span><div><div>Unsatisfiable</div>' +
-        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>';
+        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
     }
     banner.querySelectorAll('[data-tex]').forEach(function(el) {
       renderLatex(el, el.dataset.tex);
     });
-
-    document.getElementById('stat-pre-states').textContent = result.stats.pretableauStates;
-    document.getElementById('stat-init-states').textContent = result.stats.initialStates;
-    document.getElementById('stat-final-states').textContent = result.stats.finalStates;
 
     // Render elimination trace
     renderEliminationTrace(result);
