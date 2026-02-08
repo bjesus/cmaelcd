@@ -10,7 +10,7 @@ import {
   type Formula,
   type FormulaSet,
 } from "../core/types.ts";
-import { printFormula, printFormulaSet } from "../core/printer.ts";
+import { printFormula, printFormulaSet, printFormulaUnicode } from "../core/printer.ts";
 
 /**
  * Generate a complete text summary of a tableau result.
@@ -116,77 +116,77 @@ export function textVerbose(result: TableauResult): string {
 }
 
 /**
+ * Format a formula set for DOT tooltip (one formula per line).
+ * Uses real newlines — escDot will convert them to DOT \n.
+ */
+function formulaSetTooltip(fs: FormulaSet): string {
+  return fs.toArray().map(printFormulaUnicode).join("\n");
+}
+
+/**
+ * Generate a compact label for a state: its ID and count of formulas.
+ * Uses real newlines — escDot will convert them to DOT \n.
+ */
+function compactLabel(id: string, fs: FormulaSet): string {
+  return `${id}\n(${fs.size} formulas)`;
+}
+
+/**
  * Generate DOT (Graphviz) format for a tableau.
+ * Uses compact node labels with full formula sets available in tooltips.
  */
 export function toDot(result: TableauResult, phase: "pretableau" | "initial" | "final" = "final"): string {
   const lines: string[] = [];
   lines.push("digraph tableau {");
   lines.push("  rankdir=TB;");
-  lines.push("  node [shape=box, fontsize=10, fontname=\"monospace\"];");
-  lines.push("  edge [fontsize=8, fontname=\"monospace\"];");
+  lines.push("  bgcolor=transparent;");
+  lines.push('  node [shape=box, style="filled,rounded", fillcolor="#f8f9fa", color="#d0d0d0", fontsize=11, fontname="Helvetica"];');
+  lines.push('  edge [fontsize=9, fontname="Helvetica", color="#888"];');
   lines.push("");
 
   if (phase === "pretableau") {
-    // Prestates as rounded boxes
+    // Prestates as dashed ellipses
     for (const [id, ps] of result.pretableau.prestates) {
-      const label = truncateLabel(printFormulaSet(ps.formulas));
-      lines.push(`  "${id}" [label="${escDot(label)}", shape=ellipse, style=dashed];`);
+      const tooltip = formulaSetTooltip(ps.formulas);
+      lines.push(`  "${id}" [label="${escDot(compactLabel(id, ps.formulas))}", shape=ellipse, style="dashed,filled", fillcolor="#fafafa", tooltip="${escDot(tooltip)}"];`);
     }
     // States as boxes
     for (const [id, state] of result.pretableau.states) {
-      const label = truncateLabel(printFormulaSet(state.formulas));
-      const color = state.formulas.has(result.inputFormula) ? ", fillcolor=lightblue, style=filled" : "";
-      lines.push(`  "${id}" [label="${escDot(label)}"${color}];`);
+      const tooltip = formulaSetTooltip(state.formulas);
+      const hasInput = state.formulas.has(result.inputFormula);
+      const fill = hasInput ? "#dbeafe" : "#f8f9fa";
+      const border = hasInput ? "#93b5e6" : "#d0d0d0";
+      lines.push(`  "${id}" [label="${escDot(compactLabel(id, state.formulas))}", fillcolor="${fill}", color="${border}", tooltip="${escDot(tooltip)}"];`);
     }
-    // Dashed edges
+    // Dashed edges (prestate → state expansion)
     for (const edge of result.pretableau.dashedEdges) {
-      lines.push(`  "${edge.from}" -> "${edge.to}" [style=dashed];`);
+      lines.push(`  "${edge.from}" -> "${edge.to}" [style=dashed, color="#bbb"];`);
     }
-    // Solid edges
+    // Solid edges (state → prestate transitions)
     for (const edge of result.pretableau.solidEdges) {
-      lines.push(`  "${edge.from}" -> "${edge.to}" [label="${escDot(printFormula(edge.label))}"];`);
+      const label = printFormulaUnicode(edge.label);
+      lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", fontcolor="#4a6fa5"];`);
     }
   } else {
     const tableau = phase === "initial" ? result.initialTableau : result.finalTableau;
-    const eliminated = phase === "final"
-      ? new Set([...result.initialTableau.states.keys()].filter(
-          (id) => !result.finalTableau.states.has(id)
-        ))
-      : new Set<string>();
 
     for (const [id, state] of tableau.states) {
-      const label = truncateLabel(printFormulaSet(state.formulas));
+      const tooltip = formulaSetTooltip(state.formulas);
       const hasInput = state.formulas.has(result.inputFormula);
-      let style = "";
-      if (hasInput) {
-        style = ", fillcolor=lightgreen, style=filled";
-      }
-      lines.push(`  "${id}" [label="${escDot(label)}"${style}];`);
-    }
-
-    // Show eliminated states in red (only for final view)
-    if (phase === "final") {
-      for (const id of eliminated) {
-        const state = result.initialTableau.states.get(id);
-        if (state) {
-          const label = truncateLabel(printFormulaSet(state.formulas));
-          lines.push(`  "${id}" [label="${escDot(label)}", fillcolor=lightcoral, style="filled,dashed"];`);
-        }
-      }
+      const fill = hasInput ? "#dcfce7" : "#f8f9fa";
+      const border = hasInput ? "#86d997" : "#d0d0d0";
+      const penwidth = hasInput ? "2" : "1";
+      lines.push(`  "${id}" [label="${escDot(compactLabel(id, state.formulas))}", fillcolor="${fill}", color="${border}", penwidth=${penwidth}, tooltip="${escDot(tooltip)}"];`);
     }
 
     for (const edge of tableau.edges) {
-      lines.push(`  "${edge.from}" -> "${edge.to}" [label="${escDot(printFormula(edge.label))}"];`);
+      const label = printFormulaUnicode(edge.label);
+      lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", fontcolor="#4a6fa5"];`);
     }
   }
 
   lines.push("}");
   return lines.join("\n");
-}
-
-function truncateLabel(s: string, maxLen: number = 80): string {
-  if (s.length <= maxLen) return s;
-  return s.slice(0, maxLen - 3) + "...";
 }
 
 function escDot(s: string): string {
