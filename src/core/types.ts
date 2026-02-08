@@ -230,10 +230,26 @@ export interface Tableau {
   edges: SolidEdge[];
 }
 
+// Elimination tracking — records why each state was removed in Phase 3
+export type EliminationRule = "E1" | "E2";
+
+export interface EliminationRecord {
+  /** The state that was eliminated */
+  stateId: NodeId;
+  /** Which rule eliminated it: E1 (missing diamond successor) or E2 (unrealized eventuality) */
+  rule: EliminationRule;
+  /** The formula that caused elimination (diamond for E1, eventuality for E2) */
+  formula: Formula;
+  /** The formulas the state contained when it was eliminated */
+  stateFormulas: FormulaSet;
+}
+
 export interface TableauResult {
   satisfiable: boolean;
   pretableau: Pretableau;
   initialTableau: Tableau;
   finalTableau: Tableau;
   inputFormula: Formula;
+  /** Ordered list of state eliminations from Phase 3 */
+  eliminations: EliminationRecord[];
 }

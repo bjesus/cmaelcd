@@ -19,12 +19,12 @@ export function generateHTML(result?: TableauResult): string {
 <script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js"><\/script>
 <style>
 :root {
-  --bg: #fafafa;
+  --bg: #f4f5f7;
   --surface: #ffffff;
-  --surface-alt: #f5f5f5;
-  --border: #e0e0e0;
-  --text: #333333;
-  --text-muted: #777777;
+  --surface-alt: #f0f1f3;
+  --border: #dfe1e6;
+  --text: #2c3e50;
+  --text-muted: #7a8599;
   --accent: #4a6fa5;
   --accent-light: #e8eef6;
   --sat: #2e7d32;
@@ -33,162 +33,231 @@ export function generateHTML(result?: TableauResult): string {
   --unsat-bg: #ffebee;
   --highlight: #fff3e0;
   --radius: 8px;
-  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow: 0 1px 3px rgba(0,0,0,0.06);
+  --left-width: 380px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
 body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   background: var(--bg); color: var(--text);
-  line-height: 1.6; padding: 0;
+  line-height: 1.6;
 }
-.header {
+
+/* === Two-column layout === */
+.app-layout {
+  display: flex; height: 100vh; width: 100%;
+}
+
+/* --- Left panel --- */
+.left-panel {
+  width: var(--left-width); min-width: var(--left-width); max-width: var(--left-width);
+  height: 100vh; display: flex; flex-direction: column;
+  background: var(--surface); border-right: 1px solid var(--border);
+  overflow: hidden; flex-shrink: 0;
+}
+.left-scroll {
+  flex: 1; overflow-y: auto; padding: 24px 20px 20px;
+}
+
+/* Header area within left panel */
+.app-header {
+  padding: 24px 20px 16px; border-bottom: 1px solid var(--border);
   background: var(--accent); color: white;
-  padding: 24px 32px; text-align: center;
 }
-.header h1 { font-size: 1.4em; font-weight: 600; letter-spacing: 0.02em; }
-.header p { font-size: 0.85em; opacity: 0.85; margin-top: 4px; }
-.header-credit {
-  font-size: 0.78em; opacity: 0.7; margin-top: 10px; line-height: 1.5;
+.app-header h1 { font-size: 1.15em; font-weight: 700; letter-spacing: 0.01em; line-height: 1.3; }
+.app-header .subtitle {
+  font-size: 0.78em; opacity: 0.85; margin-top: 4px; line-height: 1.5;
 }
-.header-credit a { color: white; text-decoration: underline; text-underline-offset: 2px; }
-.header-credit a:hover { opacity: 1; }
+.app-header .credit {
+  font-size: 0.72em; opacity: 0.65; margin-top: 8px; line-height: 1.4;
+}
+.app-header .credit a { color: white; text-decoration: underline; text-underline-offset: 2px; }
 .header-links {
-  margin-top: 10px; display: flex; justify-content: center; gap: 16px;
+  margin-top: 10px; display: flex; gap: 10px;
 }
 .header-link {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 0.82em; color: white; opacity: 0.85; background: none;
-  border: 1px solid rgba(255,255,255,0.3); border-radius: 16px;
-  padding: 4px 14px; cursor: pointer; font-family: inherit;
+  font-size: 0.76em; color: white; opacity: 0.85; background: none;
+  border: 1px solid rgba(255,255,255,0.3); border-radius: 14px;
+  padding: 3px 12px; cursor: pointer; font-family: inherit;
   transition: all 0.15s; text-decoration: none;
 }
 .header-link:hover { opacity: 1; background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.5); }
-.container { max-width: 860px; margin: 0 auto; padding: 24px 20px; }
-.card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 24px;
-  margin-bottom: 20px; box-shadow: var(--shadow);
+
+/* Sections in left panel */
+.left-section {
+  margin-bottom: 20px;
 }
-.card h2 {
-  font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--text-muted); margin-bottom: 16px; font-weight: 600;
+.left-section:last-child { margin-bottom: 0; }
+.section-title {
+  font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--text-muted); margin-bottom: 10px; font-weight: 700;
 }
-label { display: block; font-size: 0.85em; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+
+/* Formula input */
+.formula-input-wrap { position: relative; }
 input[type="text"] {
-  width: 100%; padding: 10px 14px; border: 1.5px solid var(--border);
-  border-radius: 6px; font-size: 15px; font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  width: 100%; padding: 10px 32px 10px 14px; border: 1.5px solid var(--border);
+  border-radius: 6px; font-size: 14px; font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   background: var(--surface); color: var(--text); transition: border-color 0.15s;
 }
 input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
 input[type="text"]::placeholder { color: #bbb; }
-
-.checkbox-label {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 0.85em; color: var(--text-muted); cursor: pointer; user-select: none;
+.input-clear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border: none; background: var(--surface-alt);
+  border-radius: 50%; cursor: pointer; display: none; align-items: center;
+  justify-content: center; font-size: 13px; color: var(--text-muted);
+  line-height: 1; transition: all 0.15s;
 }
-.checkbox-label input { accent-color: var(--accent); }
+.input-clear:hover { background: var(--border); color: var(--text); }
+.formula-input-wrap.has-value .input-clear { display: flex; }
+
+.actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 10px 24px; background: var(--accent); color: white; border: none;
-  border-radius: 6px; cursor: pointer; font-size: 0.9em; font-weight: 500;
-  font-family: inherit; transition: background 0.15s;
+  padding: 9px 20px; background: var(--accent); color: white; border: none;
+  border-radius: 6px; cursor: pointer; font-size: 0.85em; font-weight: 600;
+  font-family: inherit; transition: background 0.15s; white-space: nowrap;
 }
 .btn:hover { background: #3d5d8a; }
 .btn:active { transform: translateY(1px); }
-.actions { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+.checkbox-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.8em; color: var(--text-muted); cursor: pointer; user-select: none;
+}
+.checkbox-label input { accent-color: var(--accent); }
+.loading { display: none; color: var(--text-muted); font-style: italic; font-size: 0.82em; }
+
+/* Parse error */
+.parse-error {
+  color: var(--unsat); font-size: 0.82em; margin-top: 8px; display: none;
+}
 
 /* Syntax reference */
 .syntax-ref {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  font-size: 0.82em; color: var(--text-muted);
+  display: grid; grid-template-columns: 1fr; gap: 5px;
+  font-size: 0.78em; color: var(--text-muted);
 }
 .syntax-ref code {
-  background: var(--surface-alt); padding: 2px 6px; border-radius: 3px;
+  background: var(--surface-alt); padding: 1px 5px; border-radius: 3px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.95em; color: var(--text);
 }
 .syntax-item { display: flex; align-items: baseline; gap: 6px; }
-.syntax-item .katex { font-size: 0.95em; }
+.syntax-item .katex { font-size: 0.9em; }
 
 /* Examples */
-.examples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.examples { display: flex; flex-wrap: wrap; gap: 5px; }
 .example-btn {
-  padding: 5px 12px; background: var(--accent-light); border: 1px solid var(--border);
-  color: var(--accent); border-radius: 16px; cursor: pointer; font-size: 0.8em;
+  padding: 4px 10px; background: var(--accent-light); border: 1px solid var(--border);
+  color: var(--accent); border-radius: 14px; cursor: pointer; font-size: 0.74em;
   font-family: inherit; transition: all 0.15s; white-space: nowrap;
 }
 .example-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
 
-/* Result */
+/* --- Right panel (results) --- */
+.right-panel {
+  flex: 1; height: 100vh; display: flex; flex-direction: column;
+  overflow: hidden; min-width: 0;
+}
+.right-scroll {
+  flex: 1; overflow-y: auto; padding: 24px 28px;
+}
+
+/* Empty state for right panel */
+.right-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-muted); text-align: center; padding: 40px;
+}
+.right-empty .placeholder-icon {
+  font-size: 3em; opacity: 0.25; margin-bottom: 16px;
+}
+.right-empty h2 { font-size: 1.1em; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+.right-empty p { font-size: 0.88em; max-width: 360px; line-height: 1.6; }
+
+/* Cards in the right panel */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+  margin-bottom: 16px; box-shadow: var(--shadow);
+}
+.card h2 {
+  font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted); margin-bottom: 14px; font-weight: 600;
+}
+
+/* Result banner */
 .result-banner {
-  padding: 16px 20px; border-radius: var(--radius); margin-bottom: 16px;
-  display: flex; align-items: center; gap: 12px; font-weight: 600;
+  padding: 14px 18px; border-radius: var(--radius); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 0.95em;
 }
 .result-banner.sat { background: var(--sat-bg); color: var(--sat); border: 1px solid #c8e6c9; }
 .result-banner.unsat { background: var(--unsat-bg); color: var(--unsat); border: 1px solid #ffcdd2; }
-.result-banner .icon { font-size: 1.4em; }
+.result-banner .icon { font-size: 1.3em; }
 .result-formula { margin-top: 4px; font-weight: 400; }
 
 /* Stats */
-.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
 .stat-box {
   background: var(--surface-alt); border-radius: 6px; padding: 12px; text-align: center;
 }
-.stat-box .num { font-size: 1.4em; font-weight: 700; color: var(--accent); }
-.stat-box .label { font-size: 0.75em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-box .num { font-size: 1.3em; font-weight: 700; color: var(--accent); }
+.stat-box .label { font-size: 0.72em; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
 /* Phase tabs */
-.phase-tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
+.phase-tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 14px; }
 .phase-tab {
-  padding: 8px 20px; background: none; border: none; color: var(--text-muted);
-  cursor: pointer; font-family: inherit; font-size: 0.85em; font-weight: 500;
+  padding: 7px 16px; background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-family: inherit; font-size: 0.82em; font-weight: 500;
   border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s;
 }
 .phase-tab:hover { color: var(--text); }
 .phase-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 /* State list */
-.state-list { display: flex; flex-direction: column; gap: 8px; }
+.state-list { display: flex; flex-direction: column; gap: 7px; }
 .state-item {
-  padding: 10px 14px; background: var(--surface-alt); border-radius: 6px;
-  border-left: 3px solid var(--border); font-size: 0.9em;
+  padding: 9px 12px; background: var(--surface-alt); border-radius: 6px;
+  border-left: 3px solid var(--border); font-size: 0.88em;
   overflow-x: auto;
 }
 .state-item.has-input { border-left-color: var(--accent); background: var(--highlight); }
-.state-id { font-weight: 600; color: var(--accent); font-size: 0.8em; margin-bottom: 4px; }
-.state-formulas .katex { font-size: 0.88em; }
+.state-id { font-weight: 600; color: var(--accent); font-size: 0.78em; margin-bottom: 3px; }
+.state-formulas .katex { font-size: 0.85em; }
 .edge-item {
-  padding: 8px 14px; background: var(--surface-alt); border-radius: 6px;
-  font-size: 0.85em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 12px; background: var(--surface-alt); border-radius: 6px;
+  font-size: 0.82em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .edge-arrow { color: var(--text-muted); font-weight: 500; }
 .edge-label { color: var(--accent); }
 
 .empty-notice {
-  padding: 24px; text-align: center; color: var(--text-muted);
-  font-style: italic; font-size: 0.9em;
+  padding: 20px; text-align: center; color: var(--text-muted);
+  font-style: italic; font-size: 0.88em;
 }
 
 .section-label {
-  font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--text-muted); font-weight: 600; margin: 16px 0 8px;
+  font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted); font-weight: 600; margin: 14px 0 8px;
 }
 
 /* DOT output */
 .dot-toggle {
-  font-size: 0.8em; color: var(--accent); cursor: pointer; background: none;
-  border: none; font-family: inherit; text-decoration: underline; margin-top: 12px;
+  font-size: 0.78em; color: var(--accent); cursor: pointer; background: none;
+  border: none; font-family: inherit; text-decoration: underline; margin-top: 10px;
 }
 .dot-box {
   margin-top: 8px; background: var(--surface-alt); border-radius: 6px; padding: 12px;
-  font-family: 'JetBrains Mono', monospace; font-size: 0.75em; white-space: pre-wrap;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.72em; white-space: pre-wrap;
   max-height: 200px; overflow: auto; display: none;
 }
 
 /* View toggle */
 .view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-left: auto; }
 .view-toggle-btn {
-  padding: 5px 14px; background: var(--surface); border: none; cursor: pointer;
-  font-family: inherit; font-size: 0.8em; font-weight: 500; color: var(--text-muted);
+  padding: 4px 12px; background: var(--surface); border: none; cursor: pointer;
+  font-family: inherit; font-size: 0.78em; font-weight: 500; color: var(--text-muted);
   transition: all 0.15s; border-right: 1px solid var(--border);
 }
 .view-toggle-btn:last-child { border-right: none; }
@@ -202,9 +271,9 @@ input[type="text"]::placeholder { color: #bbb; }
   min-height: 100px; text-align: center; cursor: pointer; position: relative;
 }
 .graph-container svg { max-width: 100%; height: auto; }
-.graph-loading { color: var(--text-muted); font-style: italic; font-size: 0.85em; padding: 24px; }
+.graph-loading { color: var(--text-muted); font-style: italic; font-size: 0.82em; padding: 20px; }
 .graph-hint {
-  position: absolute; bottom: 8px; right: 12px; font-size: 0.72em;
+  position: absolute; bottom: 8px; right: 12px; font-size: 0.7em;
   color: var(--text-muted); opacity: 0.7; pointer-events: none;
 }
 
@@ -288,239 +357,319 @@ input[type="text"]::placeholder { color: #bbb; }
 }
 .about-credits p { font-size: 0.85em; line-height: 1.7; }
 
+/* Graph options bar */
+.graph-options {
+  display: flex; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; align-items: center;
+}
+.graph-options label {
+  display: flex; align-items: center; gap: 5px; font-size: 0.78em;
+  color: var(--text-muted); cursor: pointer; user-select: none;
+}
+.graph-options input[type="checkbox"] { cursor: pointer; }
+
+/* Elimination trace */
+.elimination-card {
+  background: var(--surface); border: 1px solid #e5a0a0;
+  border-radius: 8px; padding: 18px; margin-bottom: 16px;
+  border-left: 4px solid var(--unsat);
+}
+.elimination-card h3 { font-size: 0.92em; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.elimination-card .elim-summary {
+  font-size: 0.82em; color: var(--text-muted); margin-bottom: 12px; line-height: 1.6;
+}
+.elim-list { display: flex; flex-direction: column; gap: 8px; }
+.elim-item {
+  display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px;
+  background: var(--surface-alt); border-radius: 6px; font-size: 0.82em;
+}
+.elim-badge {
+  flex-shrink: 0; padding: 2px 7px; border-radius: 4px; font-size: 0.76em;
+  font-weight: 600; letter-spacing: 0.03em;
+}
+.elim-badge.e1 { background: #fef3c7; color: #92400e; }
+.elim-badge.e2 { background: #fee2e2; color: #991b1b; }
+.elim-id { font-weight: 600; color: var(--text); min-width: 28px; }
+.elim-reason { color: var(--text-muted); line-height: 1.5; }
+.elim-reason .katex { font-size: 0.88em; }
+.elim-formulas {
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border);
+  color: var(--text-muted); font-size: 0.9em;
+}
+
 #result-section { display: none; }
 
 /* Loading */
-.loading { display: none; color: var(--text-muted); font-style: italic; }
 
-@media (max-width: 600px) {
+/* === Responsive: single column on mobile === */
+@media (max-width: 768px) {
+  html, body { overflow: auto; height: auto; }
+  .app-layout { flex-direction: column; height: auto; }
+  .left-panel {
+    width: 100%; min-width: 0; max-width: 100%;
+    height: auto; border-right: none; border-bottom: 1px solid var(--border);
+    overflow: visible;
+  }
+  .left-scroll { overflow: visible; }
+  .right-panel { height: auto; overflow: visible; }
+  .right-scroll { overflow: visible; padding: 16px; }
+  .right-empty { display: none; }
   .stats-grid { grid-template-columns: 1fr; }
-  .syntax-ref { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>Epistemic Logic Tableau Solver</h1>
-  <p>Satisfiability checker for CMAEL(CD) &mdash; multiagent epistemic logic with common and distributed knowledge</p>
-  <div class="header-credit">
-    Based on <a href="https://arxiv.org/abs/1201.5346" target="_blank" rel="noopener">Ajspur, Goranko &amp; Shkatov (2012)</a>
+<div class="app-layout">
+
+  <!-- ======= LEFT PANEL ======= -->
+  <div class="left-panel">
+    <div class="app-header">
+      <h1>Epistemic Logic Tableau Solver</h1>
+      <div class="subtitle">Satisfiability checker for CMAEL(CD)</div>
+      <div class="credit">
+        Based on <a href="https://arxiv.org/abs/1201.5346" target="_blank" rel="noopener">Ajspur, Goranko &amp; Shkatov (2012)</a>
+      </div>
+      <div class="header-links">
+        <button class="header-link" onclick="openAboutModal()">How it works</button>
+      </div>
+    </div>
+
+    <div class="left-scroll">
+
+      <!-- Formula Input -->
+      <div class="left-section">
+        <div class="section-title">Formula</div>
+        <div class="formula-input-wrap" id="formula-input-wrap">
+          <input type="text" id="formula-input" placeholder="e.g.  (Ka p & ~Kb p)" autocomplete="off" spellcheck="false" />
+          <button class="input-clear" id="input-clear" onclick="clearInput()" title="Clear">&times;</button>
+        </div>
+        <div class="actions">
+          <button class="btn" id="solve-btn" onclick="solve()">Check Satisfiability</button>
+          <label class="checkbox-label">
+            <input type="checkbox" id="restricted-cuts" checked />
+            Restricted cuts (C1/C2)
+          </label>
+          <span class="loading" id="loading">Solving...</span>
+        </div>
+        <div id="parse-error" class="parse-error"></div>
+      </div>
+
+      <!-- Examples -->
+      <div class="left-section">
+        <div class="section-title">Examples</div>
+        <div class="examples">
+          <button class="example-btn" onclick="setExample('(Ka p & ~Kb p)')">Ka p and not Kb p</button>
+          <button class="example-btn" onclick="setExample('C{a,b} p')">Common knowledge</button>
+          <button class="example-btn" onclick="setExample('(Ka p & ~p)')">Veridicality</button>
+          <button class="example-btn" onclick="setExample('(~D{a,c} C{a,b} p & C{a,b} (p & q))')">Paper Ex. 3</button>
+          <button class="example-btn" onclick="setExample('(~D{a,b} p & ~D{a,c} ~Ka p)')">Paper Ex. 4</button>
+          <button class="example-btn" onclick="setExample('(C{a,b} Ka p -> ~C{b,c} Kb p)')">Paper Ex. 5</button>
+        </div>
+      </div>
+
+      <!-- Syntax Reference -->
+      <div class="left-section">
+        <div class="section-title">Syntax Reference</div>
+        <div class="syntax-ref">
+          <div class="syntax-item"><code>p</code> &mdash; atomic proposition</div>
+          <div class="syntax-item"><code>~p</code> &mdash; <span class="katex-placeholder" data-tex="\\neg p"></span></div>
+          <div class="syntax-item"><code>(p & q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\wedge q)"></span></div>
+          <div class="syntax-item"><code>(p | q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\vee q)"></span></div>
+          <div class="syntax-item"><code>(p -> q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\to q)"></span></div>
+          <div class="syntax-item"><code>Ka p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{K}_a\\, p"></span> (agent <em>a</em> knows <em>p</em>)</div>
+          <div class="syntax-item"><code>D{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{D}_{\\{a,b\\}}\\, p"></span> (distributed knowledge)</div>
+          <div class="syntax-item"><code>C{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{C}_{\\{a,b\\}}\\, p"></span> (common knowledge)</div>
+        </div>
+      </div>
+
+    </div>
   </div>
-  <div class="header-links">
-    <button class="header-link" onclick="openAboutModal()">How it works</button>
+
+  <!-- ======= RIGHT PANEL ======= -->
+  <div class="right-panel">
+    <div class="right-scroll">
+
+      <!-- Empty state placeholder -->
+      <div class="right-empty" id="right-empty">
+        <div class="placeholder-icon">&vellip;</div>
+        <h2>Results will appear here</h2>
+        <p>Enter a formula on the left and click <strong>Check Satisfiability</strong>, or try one of the examples.</p>
+      </div>
+
+      <!-- Result section (hidden until solve) -->
+      <div id="result-section">
+
+        <div id="result-banner" class="result-banner"></div>
+
+        <div id="elimination-trace" style="display:none"></div>
+
+        <div class="card">
+          <h2>Tableau Statistics</h2>
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div class="num" id="stat-pre-states">-</div>
+              <div class="label">Pretableau States</div>
+            </div>
+            <div class="stat-box">
+              <div class="num" id="stat-init-states">-</div>
+              <div class="label">Initial Tableau</div>
+            </div>
+            <div class="stat-box">
+              <div class="num" id="stat-final-states">-</div>
+              <div class="label">Final Tableau</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;margin-bottom:14px">
+            <h2 style="margin-bottom:0">Tableau Details</h2>
+            <div class="view-toggle">
+              <button class="view-toggle-btn active" id="view-list-btn" onclick="setView('list')">List</button>
+              <button class="view-toggle-btn" id="view-graph-btn" onclick="setView('graph')">Graph</button>
+            </div>
+          </div>
+          <div class="phase-tabs">
+            <button class="phase-tab active" data-phase="final" onclick="showPhase('final', this)">Final Tableau</button>
+            <button class="phase-tab" data-phase="initial" onclick="showPhase('initial', this)">Initial Tableau</button>
+            <button class="phase-tab" data-phase="pretableau" onclick="showPhase('pretableau', this)">Pretableau</button>
+          </div>
+          <div class="graph-options" id="graph-options" style="display:none">
+            <label><input type="checkbox" id="opt-detailed" onchange="onGraphOptionChange()"> Detailed labels</label>
+            <label id="opt-eliminated-label" style="display:none"><input type="checkbox" id="opt-eliminated" onchange="onGraphOptionChange()"> Show eliminated states</label>
+          </div>
+          <div id="graph-view" class="graph-container" style="display:none" onclick="openFullscreen()">
+            <div class="graph-loading">Rendering graph...</div>
+            <div class="graph-hint">Click to expand</div>
+          </div>
+          <div id="phase-content"></div>
+          <button class="dot-toggle" onclick="toggleDot()">Show DOT (Graphviz) output</button>
+          <div id="dot-box" class="dot-box"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- About / How It Works Modal -->
+<div class="modal-backdrop" id="about-modal" onclick="if(event.target===this)closeAboutModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAboutModal()">&times;</button>
+    <h2>How It Works</h2>
+
+    <div class="about-section">
+      <h3>What is this?</h3>
+      <p>
+        This tool checks whether a formula of <strong>CMAEL(CD)</strong> is <em>satisfiable</em>: that is,
+        whether there exists a Kripke model and a state where the formula is true.
+        CMAEL(CD) stands for <em>Complete Multiagent Epistemic Logic with Common and Distributed knowledge</em>.
+        It extends standard multiagent epistemic logic with operators for <em>common knowledge</em>
+        (<span class="katex-placeholder" data-tex="\\mathbf{C}_A \\varphi"></span> &mdash; every agent in coalition
+        <span class="katex-placeholder" data-tex="A"></span> knows <span class="katex-placeholder" data-tex="\\varphi"></span>,
+        and everyone knows that everyone knows it, ad infinitum) and <em>distributed knowledge</em>
+        (<span class="katex-placeholder" data-tex="\\mathbf{D}_A \\varphi"></span> &mdash; <span class="katex-placeholder" data-tex="\\varphi"></span>
+        follows from the combined knowledge of all agents in <span class="katex-placeholder" data-tex="A"></span>).
+      </p>
+    </div>
+
+    <div class="about-section">
+      <h3>The Algorithm</h3>
+      <p>The algorithm is a <em>tableau-based decision procedure</em> that works in three phases:</p>
+      <div class="phase-explain">
+        <div class="phase-step">
+          <div class="phase-num">1</div>
+          <div>
+            <strong>Construction (Pretableau)</strong><br>
+            Starting from the input formula, the algorithm builds a graph of <em>prestates</em> and <em>states</em>.
+            A prestate is a set of formulas waiting to be expanded. Each prestate is expanded into one or more
+            <em>fully expanded, downward saturated</em> states by applying logical decomposition rules
+            (splitting conjunctions, branching on disjunctions, and handling modal operators).
+            For each diamond formula (<span class="katex-placeholder" data-tex="\\neg \\mathbf{D}_A \\varphi"></span>)
+            in a state, a new prestate is created as a successor, ensuring the model has the required transitions.
+            The process continues until no new prestates or states need to be created. This builds the <em>pretableau</em>.
+          </div>
+        </div>
+        <div class="phase-step">
+          <div class="phase-num">2</div>
+          <div>
+            <strong>Prestate Elimination</strong><br>
+            Prestates served as intermediate construction artifacts. In this phase, every prestate is removed
+            and edges are rewired: if state <em>s</em> pointed to prestate <em>p</em>, and <em>p</em> expanded
+            to state <em>t</em>, then <em>s</em> now points directly to <em>t</em>.
+            This produces the <em>initial tableau</em>: a graph consisting only of states and direct transition edges.
+          </div>
+        </div>
+        <div class="phase-step">
+          <div class="phase-num">3</div>
+          <div>
+            <strong>State Elimination</strong><br>
+            The algorithm iteratively removes &ldquo;defective&rdquo; states. Two types of defects are checked in a dovetailed loop:
+            <ul style="margin:8px 0 4px 20px">
+              <li><strong>E1:</strong> If a state contains a diamond formula but has no matching successor, it is eliminated.</li>
+              <li><strong>E2:</strong> <em>Eventualities</em> (arising from negated common knowledge formulas like
+                <span class="katex-placeholder" data-tex="\\neg \\mathbf{C}_A \\varphi"></span>) must be
+                <em>realized</em>: there must be a finite path of accessible states witnessing the eventuality.
+                States where an eventuality cannot be realized are eliminated.</li>
+            </ul>
+            This loop continues until no more states can be removed, yielding the <em>final tableau</em>.
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:12px">
+        The input formula is <strong>satisfiable</strong> if and only if the final tableau still contains a state
+        that includes the input formula. The tool also supports <strong>restricted cut conditions (C1/C2)</strong>,
+        an optimization from the paper that dramatically reduces the number of states explored (e.g., from 113 to 30 states
+        in Example 5) without affecting correctness.
+      </p>
+    </div>
+
+    <div class="about-section">
+      <h3>Operators at a glance</h3>
+      <table class="about-table">
+        <tr><th>Operator</th><th>Syntax</th><th>Meaning</th></tr>
+        <tr>
+          <td><span class="katex-placeholder" data-tex="\\mathbf{K}_a \\varphi"></span></td>
+          <td><code>Ka p</code></td>
+          <td>Agent <em>a</em> knows <span class="katex-placeholder" data-tex="\\varphi"></span></td>
+        </tr>
+        <tr>
+          <td><span class="katex-placeholder" data-tex="\\mathbf{D}_A \\varphi"></span></td>
+          <td><code>D{a,b} p</code></td>
+          <td>It is distributed knowledge among <span class="katex-placeholder" data-tex="A"></span> that <span class="katex-placeholder" data-tex="\\varphi"></span></td>
+        </tr>
+        <tr>
+          <td><span class="katex-placeholder" data-tex="\\mathbf{C}_A \\varphi"></span></td>
+          <td><code>C{a,b} p</code></td>
+          <td>It is common knowledge among <span class="katex-placeholder" data-tex="A"></span> that <span class="katex-placeholder" data-tex="\\varphi"></span></td>
+        </tr>
+      </table>
+      <p style="margin-top:8px;font-size:0.88em;color:var(--text-muted)">
+        Note: <code>Ka p</code> is equivalent to <code>D{a} p</code> &mdash; individual knowledge is distributed knowledge for a singleton coalition.
+      </p>
+    </div>
+
+    <div class="about-section about-credits">
+      <h3>Reference</h3>
+      <p>
+        <strong>Tableau-based decision procedure for the multiagent epistemic logic with all coalitional operators
+        for common and distributed knowledge</strong><br>
+        Mai Ajspur, Valentin Goranko, and Dmitry Shkatov (2012)<br>
+        <a href="https://arxiv.org/abs/1201.5346" target="_blank" rel="noopener" style="color:var(--accent)">arXiv:1201.5346v1</a>
+      </p>
+    </div>
   </div>
 </div>
 
-<div class="container">
-
-  <!-- Syntax Reference -->
-  <div class="card">
-    <h2>Syntax Reference</h2>
-    <div class="syntax-ref">
-      <div class="syntax-item"><code>p</code> &mdash; atomic proposition</div>
-      <div class="syntax-item"><code>~p</code> &mdash; <span class="katex-placeholder" data-tex="\\neg p"></span></div>
-      <div class="syntax-item"><code>(p & q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\wedge q)"></span></div>
-      <div class="syntax-item"><code>(p | q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\vee q)"></span></div>
-      <div class="syntax-item"><code>(p -> q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\to q)"></span></div>
-      <div class="syntax-item"><code>Ka p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{K}_a\\, p"></span> (agent <em>a</em> knows <em>p</em>)</div>
-      <div class="syntax-item"><code>D{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{D}_{\\{a,b\\}}\\, p"></span> (distributed knowledge)</div>
-      <div class="syntax-item"><code>C{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{C}_{\\{a,b\\}}\\, p"></span> (common knowledge)</div>
-    </div>
-
-    <div class="examples">
-      <button class="example-btn" onclick="setExample('(Ka p & ~Kb p)')">Ka p and not Kb p</button>
-      <button class="example-btn" onclick="setExample('C{a,b} p')">Common knowledge</button>
-      <button class="example-btn" onclick="setExample('(Ka p & ~p)')">Veridicality violation</button>
-      <button class="example-btn" onclick="setExample('(~D{a,c} C{a,b} p & C{a,b} (p & q))')">Paper Ex. 3</button>
-      <button class="example-btn" onclick="setExample('(~D{a,b} p & ~D{a,c} ~Ka p)')">Paper Ex. 4</button>
-      <button class="example-btn" onclick="setExample('(C{a,b} Ka p -> ~C{b,c} Kb p)')">Paper Ex. 5</button>
-    </div>
+<!-- Fullscreen graph overlay -->
+<div class="graph-fullscreen" id="graph-fullscreen">
+  <div class="graph-fs-toolbar">
+    <span class="title" id="graph-fs-title">Tableau Graph</span>
+    <span class="hint">Scroll to zoom &middot; Drag to pan &middot; Esc to close</span>
+    <button class="graph-fs-close" onclick="closeFullscreen()">Close</button>
   </div>
-
-  <!-- Input -->
-  <div class="card">
-    <h2>Input</h2>
-    <div>
-      <label for="formula-input">Formula</label>
-      <input type="text" id="formula-input" placeholder="e.g.  (Ka p & ~Kb p)" autocomplete="off" spellcheck="false" />
-    </div>
-    <div class="actions">
-      <button class="btn" id="solve-btn" onclick="solve()">Check Satisfiability</button>
-      <label class="checkbox-label">
-        <input type="checkbox" id="restricted-cuts" checked />
-        Restricted cuts (C1/C2)
-      </label>
-      <span class="loading" id="loading">Solving...</span>
-    </div>
-    <div id="parse-error" style="color:var(--unsat);font-size:0.85em;margin-top:8px;display:none"></div>
-  </div>
-
-  <!-- About / How It Works Modal -->
-  <div class="modal-backdrop" id="about-modal" onclick="if(event.target===this)closeAboutModal()">
-    <div class="modal">
-      <button class="modal-close" onclick="closeAboutModal()">&times;</button>
-      <h2>How It Works</h2>
-
-      <div class="about-section">
-        <h3>What is this?</h3>
-        <p>
-          This tool checks whether a formula of <strong>CMAEL(CD)</strong> is <em>satisfiable</em>: that is,
-          whether there exists a Kripke model and a state where the formula is true.
-          CMAEL(CD) stands for <em>Complete Multiagent Epistemic Logic with Common and Distributed knowledge</em>.
-          It extends standard multiagent epistemic logic with operators for <em>common knowledge</em>
-          (<span class="katex-placeholder" data-tex="\\mathbf{C}_A \\varphi"></span> &mdash; every agent in coalition
-          <span class="katex-placeholder" data-tex="A"></span> knows <span class="katex-placeholder" data-tex="\\varphi"></span>,
-          and everyone knows that everyone knows it, ad infinitum) and <em>distributed knowledge</em>
-          (<span class="katex-placeholder" data-tex="\\mathbf{D}_A \\varphi"></span> &mdash; <span class="katex-placeholder" data-tex="\\varphi"></span>
-          follows from the combined knowledge of all agents in <span class="katex-placeholder" data-tex="A"></span>).
-        </p>
-      </div>
-
-      <div class="about-section">
-        <h3>The Algorithm</h3>
-        <p>The algorithm is a <em>tableau-based decision procedure</em> that works in three phases:</p>
-        <div class="phase-explain">
-          <div class="phase-step">
-            <div class="phase-num">1</div>
-            <div>
-              <strong>Construction (Pretableau)</strong><br>
-              Starting from the input formula, the algorithm builds a graph of <em>prestates</em> and <em>states</em>.
-              A prestate is a set of formulas waiting to be expanded. Each prestate is expanded into one or more
-              <em>fully expanded, downward saturated</em> states by applying logical decomposition rules
-              (splitting conjunctions, branching on disjunctions, and handling modal operators).
-              For each diamond formula (<span class="katex-placeholder" data-tex="\\neg \\mathbf{D}_A \\varphi"></span>)
-              in a state, a new prestate is created as a successor, ensuring the model has the required transitions.
-              The process continues until no new prestates or states need to be created. This builds the <em>pretableau</em>.
-            </div>
-          </div>
-          <div class="phase-step">
-            <div class="phase-num">2</div>
-            <div>
-              <strong>Prestate Elimination</strong><br>
-              Prestates served as intermediate construction artifacts. In this phase, every prestate is removed
-              and edges are rewired: if state <em>s</em> pointed to prestate <em>p</em>, and <em>p</em> expanded
-              to state <em>t</em>, then <em>s</em> now points directly to <em>t</em>.
-              This produces the <em>initial tableau</em>: a graph consisting only of states and direct transition edges.
-            </div>
-          </div>
-          <div class="phase-step">
-            <div class="phase-num">3</div>
-            <div>
-              <strong>State Elimination</strong><br>
-              The algorithm iteratively removes &ldquo;defective&rdquo; states. Two types of defects are checked in a dovetailed loop:
-              <ul style="margin:8px 0 4px 20px">
-                <li><strong>E1:</strong> If a state contains a diamond formula but has no matching successor, it is eliminated.</li>
-                <li><strong>E2:</strong> <em>Eventualities</em> (arising from negated common knowledge formulas like
-                  <span class="katex-placeholder" data-tex="\\neg \\mathbf{C}_A \\varphi"></span>) must be
-                  <em>realized</em>: there must be a finite path of accessible states witnessing the eventuality.
-                  States where an eventuality cannot be realized are eliminated.</li>
-              </ul>
-              This loop continues until no more states can be removed, yielding the <em>final tableau</em>.
-            </div>
-          </div>
-        </div>
-        <p style="margin-top:12px">
-          The input formula is <strong>satisfiable</strong> if and only if the final tableau still contains a state
-          that includes the input formula. The tool also supports <strong>restricted cut conditions (C1/C2)</strong>,
-          an optimization from the paper that dramatically reduces the number of states explored (e.g., from 113 to 30 states
-          in Example 5) without affecting correctness.
-        </p>
-      </div>
-
-      <div class="about-section">
-        <h3>Operators at a glance</h3>
-        <table class="about-table">
-          <tr><th>Operator</th><th>Syntax</th><th>Meaning</th></tr>
-          <tr>
-            <td><span class="katex-placeholder" data-tex="\\mathbf{K}_a \\varphi"></span></td>
-            <td><code>Ka p</code></td>
-            <td>Agent <em>a</em> knows <span class="katex-placeholder" data-tex="\\varphi"></span></td>
-          </tr>
-          <tr>
-            <td><span class="katex-placeholder" data-tex="\\mathbf{D}_A \\varphi"></span></td>
-            <td><code>D{a,b} p</code></td>
-            <td>It is distributed knowledge among <span class="katex-placeholder" data-tex="A"></span> that <span class="katex-placeholder" data-tex="\\varphi"></span></td>
-          </tr>
-          <tr>
-            <td><span class="katex-placeholder" data-tex="\\mathbf{C}_A \\varphi"></span></td>
-            <td><code>C{a,b} p</code></td>
-            <td>It is common knowledge among <span class="katex-placeholder" data-tex="A"></span> that <span class="katex-placeholder" data-tex="\\varphi"></span></td>
-          </tr>
-        </table>
-        <p style="margin-top:8px;font-size:0.88em;color:var(--text-muted)">
-          Note: <code>Ka p</code> is equivalent to <code>D{a} p</code> &mdash; individual knowledge is distributed knowledge for a singleton coalition.
-        </p>
-      </div>
-
-      <div class="about-section about-credits">
-        <h3>Reference</h3>
-        <p>
-          <strong>Tableau-based decision procedure for the multiagent epistemic logic with all coalitional operators
-          for common and distributed knowledge</strong><br>
-          Mai Ajspur, Valentin Goranko, and Dmitry Shkatov (2012)<br>
-          <a href="https://arxiv.org/abs/1201.5346" target="_blank" rel="noopener" style="color:var(--accent)">arXiv:1201.5346v1</a>
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Fullscreen graph overlay -->
-  <div class="graph-fullscreen" id="graph-fullscreen">
-    <div class="graph-fs-toolbar">
-      <span class="title" id="graph-fs-title">Tableau Graph</span>
-      <span class="hint">Scroll to zoom &middot; Drag to pan &middot; Esc to close</span>
-      <button class="graph-fs-close" onclick="closeFullscreen()">Close</button>
-    </div>
-    <div class="graph-fs-viewport" id="graph-fs-viewport"></div>
-  </div>
-
-  <!-- Result -->
-  <div id="result-section">
-
-    <div id="result-banner" class="result-banner"></div>
-
-    <div class="card">
-      <h2>Tableau Statistics</h2>
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="num" id="stat-pre-states">-</div>
-          <div class="label">Pretableau States</div>
-        </div>
-        <div class="stat-box">
-          <div class="num" id="stat-init-states">-</div>
-          <div class="label">Initial Tableau</div>
-        </div>
-        <div class="stat-box">
-          <div class="num" id="stat-final-states">-</div>
-          <div class="label">Final Tableau</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div style="display:flex;align-items:center;margin-bottom:16px">
-        <h2 style="margin-bottom:0">Tableau Details</h2>
-        <div class="view-toggle">
-          <button class="view-toggle-btn active" id="view-list-btn" onclick="setView('list')">List</button>
-          <button class="view-toggle-btn" id="view-graph-btn" onclick="setView('graph')">Graph</button>
-        </div>
-      </div>
-      <div class="phase-tabs">
-        <button class="phase-tab active" data-phase="final" onclick="showPhase('final', this)">Final Tableau</button>
-        <button class="phase-tab" data-phase="initial" onclick="showPhase('initial', this)">Initial Tableau</button>
-        <button class="phase-tab" data-phase="pretableau" onclick="showPhase('pretableau', this)">Pretableau</button>
-      </div>
-      <div id="graph-view" class="graph-container" style="display:none" onclick="openFullscreen()">
-        <div class="graph-loading">Rendering graph...</div>
-        <div class="graph-hint">Click to expand</div>
-      </div>
-      <div id="phase-content"></div>
-      <button class="dot-toggle" onclick="toggleDot()">Show DOT (Graphviz) output</button>
-      <div id="dot-box" class="dot-box"></div>
-    </div>
-  </div>
-
+  <div class="graph-fs-viewport" id="graph-fs-viewport"></div>
 </div>
 
 <script>
@@ -529,6 +678,38 @@ let currentPhase = 'final';
 let currentView = 'list';
 let vizInstance = null;
 let vizLoading = false;
+
+// Compute the DOT key based on current phase and options
+function getDotKey() {
+  const detailed = document.getElementById('opt-detailed').checked;
+  const showElim = document.getElementById('opt-eliminated').checked;
+  if (currentPhase === 'pretableau') return detailed ? 'pretableauDetailed' : 'pretableau';
+  if (currentPhase === 'initial') return detailed ? 'initialDetailed' : 'initial';
+  // final phase
+  if (detailed && showElim) return 'finalDetailedEliminated';
+  if (detailed) return 'finalDetailed';
+  if (showElim) return 'finalEliminated';
+  return 'final';
+}
+
+function onGraphOptionChange() {
+  if (currentView === 'graph' && lastResult) {
+    renderGraph(lastResult, currentPhase);
+  }
+  // Update DOT output too
+  if (lastResult) {
+    var dotBox = document.getElementById('dot-box');
+    dotBox.textContent = lastResult.dots[getDotKey()] || '';
+  }
+}
+
+function updateGraphOptionsVisibility() {
+  document.getElementById('graph-options').style.display = currentView === 'graph' ? 'flex' : 'none';
+  // Show "eliminated" checkbox only on final phase and when there are eliminations
+  var showElimLabel = document.getElementById('opt-eliminated-label');
+  var hasElims = lastResult && lastResult.eliminations && lastResult.eliminations.length > 0;
+  showElimLabel.style.display = (currentPhase === 'final' && hasElims) ? '' : 'none';
+}
 
 async function getViz() {
   if (vizInstance) return vizInstance;
@@ -555,6 +736,7 @@ function setView(view) {
   document.getElementById('view-graph-btn').classList.toggle('active', view === 'graph');
   document.getElementById('phase-content').style.display = view === 'list' ? 'block' : 'none';
   document.getElementById('graph-view').style.display = view === 'graph' ? 'block' : 'none';
+  updateGraphOptionsVisibility();
   if (view === 'graph' && lastResult) {
     renderGraph(lastResult, currentPhase);
   }
@@ -562,17 +744,18 @@ function setView(view) {
 
 async function renderGraph(result, phase) {
   const container = document.getElementById('graph-view');
-  const dot = result.dots[phase];
+  const dotKey = getDotKey();
+  const dot = result.dots[dotKey];
   if (!dot) {
     container.innerHTML = '<div class="graph-loading">No graph data available</div>';
     return;
   }
-  container.innerHTML = '<div class="graph-loading">Rendering graph...</div>';
+  container.innerHTML = '<div class="graph-loading">Rendering graph...</div><div class="graph-hint">Click to expand</div>';
   try {
     const viz = await getViz();
     const svg = viz.renderSVGElement(dot);
-    container.innerHTML = '';
-    container.appendChild(svg);
+    container.innerHTML = '<div class="graph-hint">Click to expand</div>';
+    container.insertBefore(svg, container.firstChild);
   } catch(e) {
     container.innerHTML = '<div class="graph-loading">Error rendering graph: ' + e.message + '</div>';
   }
@@ -590,7 +773,7 @@ let fsPanStartY = 0;
 
 function openFullscreen() {
   if (!lastResult) return;
-  const dot = lastResult.dots[currentPhase];
+  const dot = lastResult.dots[getDotKey()];
   if (!dot) return;
 
   const overlay = document.getElementById('graph-fullscreen');
@@ -748,7 +931,22 @@ function closeAboutModal() {
 
 function setExample(formula) {
   document.getElementById('formula-input').value = formula;
+  updateClearBtn();
   solve();
+}
+
+function clearInput() {
+  var input = document.getElementById('formula-input');
+  input.value = '';
+  updateClearBtn();
+  input.focus();
+  document.getElementById('parse-error').style.display = 'none';
+}
+
+function updateClearBtn() {
+  var wrap = document.getElementById('formula-input-wrap');
+  var input = document.getElementById('formula-input');
+  wrap.classList.toggle('has-value', input.value.length > 0);
 }
 
 function renderLatex(container, tex) {
@@ -764,8 +962,10 @@ document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.katex-placeholder').forEach(function(el) {
     renderLatex(el, el.dataset.tex);
   });
-  // Focus formula input
-  document.getElementById('formula-input').focus();
+  // Focus formula input and track its value for clear button
+  var input = document.getElementById('formula-input');
+  input.focus();
+  input.addEventListener('input', updateClearBtn);
 });
 
 // Enter key to solve
@@ -779,6 +979,7 @@ function showPhase(phase, btn) {
   currentPhase = phase;
   document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
+  updateGraphOptionsVisibility();
   if (lastResult) {
     displayPhase(lastResult, phase);
     if (currentView === 'graph') {
@@ -865,7 +1066,7 @@ function displayPhase(result, phase) {
 
   // Update DOT
   const dotBox = document.getElementById('dot-box');
-  dotBox.textContent = result.dots[phase] || '';
+  dotBox.textContent = result.dots[getDotKey()] || '';
 }
 
 function escAttr(s) {
@@ -875,6 +1076,69 @@ function escAttr(s) {
 function toggleDot() {
   const box = document.getElementById('dot-box');
   box.style.display = box.style.display === 'none' || !box.style.display ? 'block' : 'none';
+}
+
+function renderEliminationTrace(result) {
+  const container = document.getElementById('elimination-trace');
+
+  if (result.satisfiable) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  var html = '<div class="elimination-card">';
+  html += '<h3>Why is this unsatisfiable?</h3>';
+
+  if (result.stats.pretableauStates === 0) {
+    // No states were ever created — patent inconsistency during expansion
+    html += '<div class="elim-summary">';
+    html += 'All formula expansions led to <strong>contradictions</strong>. ';
+    html += 'Every possible assignment of truth values to subformulas resulted in a set containing both ';
+    html += '<em>&phi;</em> and <em>&not;&phi;</em> for some formula &phi;, making the formula unsatisfiable ';
+    html += 'without even needing to build a tableau.';
+    html += '</div>';
+  } else if (result.eliminations.length === 0) {
+    // States existed in initial tableau but all ended up eliminated (edge case)
+    html += '<div class="elim-summary">';
+    html += 'All ' + result.stats.initialStates + ' states from the initial tableau were eliminated.';
+    html += '</div>';
+  } else {
+    var e1Count = result.stats.eliminationsE1 || 0;
+    var e2Count = result.stats.eliminationsE2 || 0;
+    html += '<div class="elim-summary">';
+    html += 'All ' + result.stats.initialStates + ' states from the initial tableau were eliminated during Phase 3:';
+    if (e1Count > 0) html += '<br><strong>' + e1Count + '</strong> by rule <strong>E1</strong> (diamond formula had no valid successor)';
+    if (e2Count > 0) html += '<br><strong>' + e2Count + '</strong> by rule <strong>E2</strong> (eventuality could not be realized)';
+    html += '</div>';
+
+    html += '<div class="elim-list">';
+    for (var i = 0; i < result.eliminations.length; i++) {
+      var e = result.eliminations[i];
+      html += '<div class="elim-item">';
+      html += '<span class="elim-badge ' + e.rule.toLowerCase() + '">' + e.rule + '</span>';
+      html += '<span class="elim-id">' + e.stateId + '</span>';
+      html += '<div class="elim-reason">';
+      if (e.rule === 'E1') {
+        html += 'Diamond formula <span data-tex="' + escAttr(e.formulaLatex) + '"></span> had no surviving successor state';
+      } else {
+        html += 'Eventuality <span data-tex="' + escAttr(e.formulaLatex) + '"></span> could not be realized (no finite witness path)';
+      }
+      html += '<div class="elim-formulas">State contained: <span data-tex="' + escAttr(e.stateFormulasLatex) + '"></span></div>';
+      html += '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+  container.style.display = 'block';
+
+  // Render KaTeX
+  container.querySelectorAll('[data-tex]').forEach(function(el) {
+    renderLatex(el, el.dataset.tex);
+  });
 }
 
 function solve() {
@@ -891,6 +1155,8 @@ function solve() {
 
     const section = document.getElementById('result-section');
     section.style.display = 'block';
+    var empty = document.getElementById('right-empty');
+    if (empty) empty.style.display = 'none';
 
     const banner = document.getElementById('result-banner');
     if (result.satisfiable) {
@@ -910,10 +1176,18 @@ function solve() {
     document.getElementById('stat-init-states').textContent = result.stats.initialStates;
     document.getElementById('stat-final-states').textContent = result.stats.finalStates;
 
+    // Render elimination trace
+    renderEliminationTrace(result);
+
+    // Reset graph options
+    document.getElementById('opt-detailed').checked = false;
+    document.getElementById('opt-eliminated').checked = false;
+
     // Reset to final tab
     currentPhase = 'final';
     document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
     document.querySelector('.phase-tab[data-phase="final"]').classList.add('active');
+    updateGraphOptionsVisibility();
     displayPhase(result, 'final');
     if (currentView === 'graph') {
       renderGraph(result, 'final');

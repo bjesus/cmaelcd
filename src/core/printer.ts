@@ -66,7 +66,7 @@ export function printFormulaUnicode(f: Formula): string {
 
     case "D":
       if (f.coalition.length === 1) {
-        return `K\u2080${subscript(f.coalition[0]!)} ${printFormulaUnicodeWrapped(f.sub)}`;
+        return `K${f.coalition[0]} ${printFormulaUnicodeWrapped(f.sub)}`;
       }
       return `D{${f.coalition.join(",")}} ${printFormulaUnicodeWrapped(f.sub)}`;
 
@@ -80,10 +80,6 @@ function printFormulaUnicodeWrapped(f: Formula): string {
     return `(${printFormulaUnicode(f)})`;
   }
   return printFormulaUnicode(f);
-}
-
-function subscript(s: string): string {
-  return s; // Keeping it simple — full subscript conversion is overkill
 }
 
 /**

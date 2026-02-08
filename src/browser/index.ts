@@ -53,6 +53,15 @@ function serializeResult(result: TableauResult) {
     };
   }
 
+  // Serialize elimination records
+  const eliminations = result.eliminations.map((rec) => ({
+    stateId: rec.stateId,
+    rule: rec.rule,
+    formulaLatex: printFormulaLatex(rec.formula),
+    formulaAscii: printFormula(rec.formula),
+    stateFormulasLatex: printFormulaSetLatex(rec.stateFormulas),
+  }));
+
   return {
     satisfiable: result.satisfiable,
     inputLatex,
@@ -63,7 +72,10 @@ function serializeResult(result: TableauResult) {
       initialEdges: result.initialTableau.edges.length,
       finalStates: result.finalTableau.states.size,
       finalEdges: result.finalTableau.edges.length,
+      eliminationsE1: eliminations.filter((e) => e.rule === "E1").length,
+      eliminationsE2: eliminations.filter((e) => e.rule === "E2").length,
     },
+    eliminations,
     pretableau: {
       states: serializeStates(result.pretableau.states),
       prestates: pretableauPrestates,
@@ -77,10 +89,16 @@ function serializeResult(result: TableauResult) {
       states: serializeStates(result.finalTableau.states),
       edges: serializeEdges(result.finalTableau.edges),
     },
+    // DOT variants: compact and detailed, plus eliminated variants for final
     dots: {
       pretableau: toDot(result, "pretableau"),
       initial: toDot(result, "initial"),
       final: toDot(result, "final"),
+      pretableauDetailed: toDot(result, "pretableau", { detailedLabels: true }),
+      initialDetailed: toDot(result, "initial", { detailedLabels: true }),
+      finalDetailed: toDot(result, "final", { detailedLabels: true }),
+      finalEliminated: toDot(result, "final", { showEliminated: true }),
+      finalDetailedEliminated: toDot(result, "final", { detailedLabels: true, showEliminated: true }),
     },
   };
 }

@@ -33,7 +33,8 @@ ${bundleCode}
 </script>
 `;
 
-html = html.replace("</body>", solverScript + "\n</body>");
+// Use a function replacement to avoid $& and other special patterns in the bundled code
+html = html.replace("</body>", () => solverScript + "\n</body>");
 
 // Write to dist/
 const fs = await import("fs");

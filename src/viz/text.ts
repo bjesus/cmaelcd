@@ -117,27 +117,54 @@ export function textVerbose(result: TableauResult): string {
   return lines.join("\n");
 }
 
+/** Options for DOT generation */
+export interface DotOptions {
+  /** Show full formula sets in node labels instead of just counts */
+  detailedLabels?: boolean;
+  /** Show eliminated states (only for "final" phase) as faded red nodes */
+  showEliminated?: boolean;
+}
+
 /**
- * Format a formula set for DOT tooltip (one formula per line).
- * Uses real newlines — escDot will convert them to DOT \n.
+ * Format a formula set for DOT tooltip (one formula per line, Unicode).
  */
 function formulaSetTooltip(fs: FormulaSet): string {
   return fs.toArray().map(printFormulaUnicode).join("\n");
 }
 
 /**
- * Generate a compact label for a state: its ID and count of formulas.
- * Uses real newlines — escDot will convert them to DOT \n.
+ * Generate a compact label: state ID + formula count.
  */
 function compactLabel(id: string, fs: FormulaSet): string {
   return `${id}\n(${fs.size} formulas)`;
 }
 
 /**
- * Generate DOT (Graphviz) format for a tableau.
- * Uses compact node labels with full formula sets available in tooltips.
+ * Generate a detailed label: state ID + all formulas.
+ * Uses \l for left-aligned lines in DOT.
  */
-export function toDot(result: TableauResult, phase: "pretableau" | "initial" | "final" = "final"): string {
+function detailedLabel(id: string, fs: FormulaSet): string {
+  const formulas = fs.toArray().map(printFormulaUnicode);
+  return id + "\n" + "─".repeat(Math.min(id.length + 6, 20)) + "\n" + formulas.join("\n");
+}
+
+/**
+ * Build a node label based on options.
+ */
+function nodeLabel(id: string, fs: FormulaSet, detailed: boolean): string {
+  return detailed ? detailedLabel(id, fs) : compactLabel(id, fs);
+}
+
+/**
+ * Generate DOT (Graphviz) format for a tableau.
+ */
+export function toDot(
+  result: TableauResult,
+  phase: "pretableau" | "initial" | "final" = "final",
+  options: DotOptions = {}
+): string {
+  const detailed = options.detailedLabels ?? false;
+  const showEliminated = options.showEliminated ?? false;
   const lines: string[] = [];
   lines.push("digraph tableau {");
   lines.push("  rankdir=TB;");
@@ -150,7 +177,8 @@ export function toDot(result: TableauResult, phase: "pretableau" | "initial" | "
     // Prestates as dashed ellipses
     for (const [id, ps] of result.pretableau.prestates) {
       const tooltip = formulaSetTooltip(ps.formulas);
-      lines.push(`  "${id}" [label="${escDot(compactLabel(id, ps.formulas))}", shape=ellipse, style="dashed,filled", fillcolor="#fafafa", tooltip="${escDot(tooltip)}"];`);
+      const label = nodeLabel(id, ps.formulas, detailed);
+      lines.push(`  "${id}" [label="${escDot(label)}", shape=ellipse, style="dashed,filled", fillcolor="#fafafa", tooltip="${escDot(tooltip)}"];`);
     }
     // States as boxes
     for (const [id, state] of result.pretableau.states) {
@@ -158,7 +186,8 @@ export function toDot(result: TableauResult, phase: "pretableau" | "initial" | "
       const hasInput = state.formulas.has(result.inputFormula);
       const fill = hasInput ? "#dbeafe" : "#f8f9fa";
       const border = hasInput ? "#93b5e6" : "#d0d0d0";
-      lines.push(`  "${id}" [label="${escDot(compactLabel(id, state.formulas))}", fillcolor="${fill}", color="${border}", tooltip="${escDot(tooltip)}"];`);
+      const label = nodeLabel(id, state.formulas, detailed);
+      lines.push(`  "${id}" [label="${escDot(label)}", fillcolor="${fill}", color="${border}", tooltip="${escDot(tooltip)}"];`);
     }
     // Dashed edges (prestate → state expansion)
     for (const edge of result.pretableau.dashedEdges) {
@@ -172,15 +201,51 @@ export function toDot(result: TableauResult, phase: "pretableau" | "initial" | "
   } else {
     const tableau = phase === "initial" ? result.initialTableau : result.finalTableau;
 
+    // Build elimination lookup for the final phase
+    const eliminationMap = new Map<string, string>();
+    if (showEliminated && phase === "final" && result.eliminations) {
+      for (const rec of result.eliminations) {
+        if (!eliminationMap.has(rec.stateId)) {
+          const reason = rec.rule === "E1"
+            ? `E1: ${printFormulaUnicode(rec.formula)} has no successor`
+            : `E2: eventuality ${printFormulaUnicode(rec.formula)} unrealized`;
+          eliminationMap.set(rec.stateId, reason);
+        }
+      }
+    }
+
+    // Surviving states
     for (const [id, state] of tableau.states) {
       const tooltip = formulaSetTooltip(state.formulas);
       const hasInput = state.formulas.has(result.inputFormula);
       const fill = hasInput ? "#dcfce7" : "#f8f9fa";
       const border = hasInput ? "#86d997" : "#d0d0d0";
       const penwidth = hasInput ? "2" : "1";
-      lines.push(`  "${id}" [label="${escDot(compactLabel(id, state.formulas))}", fillcolor="${fill}", color="${border}", penwidth=${penwidth}, tooltip="${escDot(tooltip)}"];`);
+      const label = nodeLabel(id, state.formulas, detailed);
+      lines.push(`  "${id}" [label="${escDot(label)}", fillcolor="${fill}", color="${border}", penwidth=${penwidth}, tooltip="${escDot(tooltip)}"];`);
     }
 
+    // Eliminated states (shown as faded red, only for final phase)
+    if (showEliminated && phase === "final") {
+      for (const [id, state] of result.initialTableau.states) {
+        if (tableau.states.has(id)) continue; // still alive, skip
+        const reason = eliminationMap.get(id) || "eliminated";
+        const elimLabel = detailed
+          ? detailedLabel(id + " ✗", state.formulas)
+          : `${id} ✗\n${reason}`;
+        const tooltip = reason + "\n\n" + formulaSetTooltip(state.formulas);
+        lines.push(`  "${id}" [label="${escDot(elimLabel)}", fillcolor="#fee2e2", color="#e5a0a0", fontcolor="#999", style="filled,rounded,dashed", tooltip="${escDot(tooltip)}"];`);
+      }
+
+      // Show edges involving eliminated states as dashed/gray
+      for (const edge of result.initialTableau.edges) {
+        if (tableau.states.has(edge.from) && tableau.states.has(edge.to)) continue; // already shown below
+        const label = printFormulaUnicode(edge.label);
+        lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", fontcolor="#ccc", color="#ddd", style=dashed];`);
+      }
+    }
+
+    // Surviving edges
     for (const edge of tableau.edges) {
       const label = printFormulaUnicode(edge.label);
       lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", fontcolor="#4a6fa5"];`);

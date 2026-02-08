@@ -25,6 +25,7 @@ import {
   type Pretableau,
   type Tableau,
   type TableauResult,
+  type EliminationRecord,
   FormulaSet,
   Not,
   D,
@@ -74,7 +75,7 @@ export function runTableau(
   const initialTableau = prestateEliminationPhase(pretableau);
 
   // Phase 3: State elimination
-  const finalTableau = stateEliminationPhase(initialTableau);
+  const { tableau: finalTableau, eliminations } = stateEliminationPhase(initialTableau);
 
   // Check if open: does any surviving state contain θ?
   let satisfiable = false;
@@ -91,6 +92,7 @@ export function runTableau(
     initialTableau,
     finalTableau,
     inputFormula: theta,
+    eliminations,
   };
 }
 
@@ -377,19 +379,20 @@ function prestateEliminationPhase(pretableau: Pretableau): Tableau {
  * Cycles through all eventualities, alternating (E2) then (E1),
  * until a full cycle with no removals.
  */
-function stateEliminationPhase(initialTableau: Tableau): Tableau {
+function stateEliminationPhase(initialTableau: Tableau): { tableau: Tableau; eliminations: EliminationRecord[] } {
   // Work on a mutable copy
   const states = new Map(initialTableau.states);
   let edges = [...initialTableau.edges];
+  const eliminations: EliminationRecord[] = [];
 
   // Collect all eventualities appearing in any state
   const allEventualities = collectAllEventualities(states);
 
   if (allEventualities.length === 0) {
     // No eventualities — only need to check (E1)
-    applyE1UntilFixpoint(states, edges);
+    eliminations.push(...applyE1UntilFixpoint(states, edges));
     edges = edges.filter((e) => states.has(e.from) && states.has(e.to));
-    return { states, edges };
+    return { tableau: { states, edges }, eliminations };
   }
 
   // Dovetailed cycles through eventualities
@@ -399,15 +402,17 @@ function stateEliminationPhase(initialTableau: Tableau): Tableau {
 
     for (const eventuality of allEventualities) {
       // Apply (E2) for this eventuality
-      const removedByE2 = applyE2(states, edges, eventuality);
-      if (removedByE2) {
+      const e2Records = applyE2(states, edges, eventuality);
+      if (e2Records.length > 0) {
+        eliminations.push(...e2Records);
         removedInCycle = true;
         edges = edges.filter((e) => states.has(e.from) && states.has(e.to));
       }
 
       // Apply (E1) until no more removals
-      const removedByE1 = applyE1UntilFixpoint(states, edges);
-      if (removedByE1) {
+      const e1Records = applyE1UntilFixpoint(states, edges);
+      if (e1Records.length > 0) {
+        eliminations.push(...e1Records);
         removedInCycle = true;
         edges = edges.filter((e) => states.has(e.from) && states.has(e.to));
       }
@@ -415,7 +420,7 @@ function stateEliminationPhase(initialTableau: Tableau): Tableau {
   }
 
   edges = edges.filter((e) => states.has(e.from) && states.has(e.to));
-  return { states, edges };
+  return { tableau: { states, edges }, eliminations };
 }
 
 /**
@@ -449,13 +454,13 @@ function collectAllEventualities(states: Map<NodeId, State>): Formula[] {
 function applyE1UntilFixpoint(
   states: Map<NodeId, State>,
   edges: SolidEdge[]
-): boolean {
-  let anyRemoved = false;
+): EliminationRecord[] {
+  const records: EliminationRecord[] = [];
   let changed = true;
 
   while (changed) {
     changed = false;
-    const toRemove: NodeId[] = [];
+    const toRemove: { id: NodeId; formula: Formula }[] = [];
 
     for (const [id, state] of states) {
       for (const f of state.formulas) {
@@ -468,21 +473,27 @@ function applyE1UntilFixpoint(
               states.has(e.to)
           );
           if (!hasSuccessor) {
-            toRemove.push(id);
+            toRemove.push({ id, formula: f });
             break; // No need to check other diamonds
           }
         }
       }
     }
 
-    for (const id of toRemove) {
+    for (const { id, formula } of toRemove) {
+      const state = states.get(id)!;
+      records.push({
+        stateId: id,
+        rule: "E1",
+        formula,
+        stateFormulas: state.formulas.clone(),
+      });
       states.delete(id);
       changed = true;
-      anyRemoved = true;
     }
   }
 
-  return anyRemoved;
+  return records;
 }
 
 /**
@@ -500,7 +511,7 @@ function applyE2(
   states: Map<NodeId, State>,
   edges: SolidEdge[],
   eventuality: Formula
-): boolean {
+): EliminationRecord[] {
   if (eventuality.kind !== "not" || eventuality.sub.kind !== "C") {
     throw new Error("applyE2 called with non-eventuality");
   }
@@ -517,7 +528,7 @@ function applyE2(
     }
   }
 
-  if (statesWithEventuality.size === 0) return false;
+  if (statesWithEventuality.size === 0) return [];
 
   // Marking procedure
   const marked = new Set<NodeId>();
@@ -537,63 +548,19 @@ function applyE2(
       if (marked.has(id)) continue;
       if (!states.has(id)) continue;
 
-      // Check if there's an edge from this state to a marked state via ¬D_a ψ where a ∈ A
+      // Check if there's an edge to a marked state via ¬D_{A'} ψ where A' ∩ A ≠ ∅
       for (const edge of edges) {
         if (edge.from !== id) continue;
         if (!states.has(edge.to)) continue;
         if (!marked.has(edge.to)) continue;
 
-        // Check that the edge label is ¬D_a ψ for some a ∈ A
         if (
           edge.label.kind === "not" &&
           edge.label.sub.kind === "D"
         ) {
           const edgeCoalition = edge.label.sub.coalition;
-          // Check if any agent in the edge coalition is in A
-          // Note: ¬D_a ψ means coalition = {a}, so we check if that agent is in A
-          // But actually, we need a_i ∈ A per Definition 16.
-          // The edge label is ¬D_{A'} ψ. For realization, we need some a ∈ A
-          // to be the single agent. But the paper says χ_i = ¬D_{a_i} ψ_i where a_i ∈ A.
-          // So the coalition in the diamond can be any coalition, as long as
-          // it was triggered and leads to a successor. Let me re-read...
-          //
-          // Definition 16: "there exists χ_i = ¬D_{a_i} ψ_i such that a_i ∈ A"
-          // This means the diamond formula is ¬D_{a_i} ψ_i where a_i is a single agent in A.
-          // But wait — a_i ∈ A means a_i is an agent in A, and the diamond is ¬D_{a_i} ψ_i.
-          // Actually, looking more carefully, a_i ∈ A just means the subscript
-          // agent is in A. The diamond can be ¬D_B ψ as long as there exists an a ∈ A ∩ B
-          // because going along R^D_B ⊆ R^D_a for a ∈ B.
-          //
-          // Actually no. Re-reading Definition 16 more carefully:
-          // "χ_i = ¬D_{a_i} ψ_i such that a_i ∈ A"
-          // Here a_i is used as an agent name, not a coalition. So the diamond is
-          // ¬D_{a_i} ψ_i where a_i is a single agent.
-          //
-          // But in practice, edges can be labeled with ¬D_B ψ for any coalition B.
-          // For realization, we need the edge to correspond to a step along R^D_a
-          // for some a ∈ A. Since R^D_B ⊆ R^D_a for all a ∈ B (in a CMAEF),
-          // an edge labeled ¬D_B ψ corresponds to a step along R^D_a for any a ∈ B.
-          // So we need B ∩ A ≠ ∅.
-          //
-          // Wait, actually this is about the Hintikka structure, not the model.
-          // In the Hintikka structure, the edge labeled with coalition A means
-          // (s,t) ∈ R^D_A. For realization of ¬C_B φ, we need to follow edges
-          // where the coalition contains at least one agent from B.
-          //
-          // Let me re-read the marking procedure on p.20:
-          // "if Δ contains ¬C_A φ and is unmarked yet, but there exists at least
-          //  one Δ' such that Δ →[¬D_a ψ] Δ', for some formula ψ and a ∈ A
-          //  and Δ' is marked, we mark Δ."
-          //
-          // So the edge label must be ¬D_a ψ where a is a SINGLE agent in A.
-          // But our DR rule creates edges labeled ¬D_B ψ for any coalition B.
-          // When B is a single agent {a} and a ∈ A, this qualifies.
-          // When B has multiple agents, the edge is ¬D_B ψ which corresponds
-          // to R^D_B. For realization, we need R^D_{a_i} links, and
-          // R^D_B ⊆ R^D_a for a ∈ B. So an edge ¬D_B ψ can serve as
-          // a step for agent a ∈ B ∩ A.
-          //
-          // So the condition is: edgeCoalition ∩ A ≠ ∅
+          // The condition B ∩ A ≠ ∅ is a sound generalization of the paper's
+          // single-agent formulation (see detailed comments in prior version).
           if (coalitionIntersects(edgeCoalition, A)) {
             marked.add(id);
             changed = true;
@@ -605,13 +572,19 @@ function applyE2(
   }
 
   // Step 3: Eliminate unmarked states that contain the eventuality
-  let anyRemoved = false;
+  const records: EliminationRecord[] = [];
   for (const id of statesWithEventuality) {
     if (!marked.has(id) && states.has(id)) {
+      const state = states.get(id)!;
+      records.push({
+        stateId: id,
+        rule: "E2",
+        formula: eventuality,
+        stateFormulas: state.formulas.clone(),
+      });
       states.delete(id);
-      anyRemoved = true;
     }
   }
 
-  return anyRemoved;
+  return records;
 }
