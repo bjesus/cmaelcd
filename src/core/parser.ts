@@ -11,15 +11,17 @@
  *              | '~' primary                    // negation
  *              | 'D' coalition primary           // distributed knowledge
  *              | 'C' coalition primary           // common knowledge
+ *              | 'K' coalition primary           // everyone knows (sugar)
  *              | 'K' agent primary               // individual knowledge (sugar for D{a})
  *              | '(' expr ')'
  *
  *   expr       := primary (('&' | '|' | '->') primary)*
  *
  * Sugar:
- *   φ | ψ   desugars to  ~(~φ & ~ψ)
- *   φ -> ψ  desugars to  ~(φ & ~ψ)
- *   Ka φ    desugars to  D{a} φ
+ *   φ | ψ       desugars to  ~(~φ & ~ψ)
+ *   φ -> ψ      desugars to  ~(φ & ~ψ)
+ *   Ka φ        desugars to  D{a} φ
+ *   K{a,b} φ    desugars to  (Ka φ & Kb φ)
  *
  * Operator precedence (high to low):
  *   ~ (prefix), D/C/K (prefix), &, |, ->
@@ -150,6 +152,23 @@ class Parser {
       this.skipWhitespace();
       const sub = this.parsePrimary();
       return C(coalition, sub);
+    }
+
+    // K{...} — everyone knows (sugar: K{a,b} φ => (Ka φ & Kb φ))
+    if (ch === "K" && this.pos + 1 < this.input.length && this.input[this.pos + 1] === "{") {
+      this.advance(1); // skip 'K'
+      const coalition = this.parseCoalition();
+      if (coalition.length === 0) {
+        throw new ParseError("K{} requires at least one agent", this.pos);
+      }
+      this.skipWhitespace();
+      const sub = this.parsePrimary();
+      // Fold into conjunction: (Ka φ & (Kb φ & ...))
+      let result: Formula = D([coalition[coalition.length - 1]!], sub);
+      for (let i = coalition.length - 2; i >= 0; i--) {
+        result = And(D([coalition[i]!], sub), result);
+      }
+      return result;
     }
 
     // K<agent> — individual knowledge (sugar for D{agent})

@@ -100,6 +100,48 @@ describe("Parser", () => {
     }
   });
 
+  test("parse K{a} as individual knowledge (same as Ka)", () => {
+    const f = parseFormula("K{a} p");
+    expect(f.kind).toBe("D");
+    if (f.kind === "D") {
+      expect(f.coalition).toEqual(["a"]);
+      expect(f.sub.kind).toBe("atom");
+    }
+  });
+
+  test("parse K{a,b} as conjunction of individual knowledge", () => {
+    const f = parseFormula("K{a,b} p");
+    // K{a,b} p desugars to (Ka p & Kb p)
+    expect(f.kind).toBe("and");
+    if (f.kind === "and") {
+      expect(f.left.kind).toBe("D");
+      if (f.left.kind === "D") {
+        expect(f.left.coalition).toEqual(["a"]);
+      }
+      expect(f.right.kind).toBe("D");
+      if (f.right.kind === "D") {
+        expect(f.right.coalition).toEqual(["b"]);
+      }
+    }
+  });
+
+  test("parse K{a,b,c} as nested conjunction", () => {
+    const f = parseFormula("K{a,b,c} p");
+    // K{a,b,c} p desugars to (Ka p & (Kb p & Kc p))
+    expect(f.kind).toBe("and");
+    if (f.kind === "and") {
+      expect(f.left.kind).toBe("D");
+      if (f.left.kind === "D") expect(f.left.coalition).toEqual(["a"]);
+      expect(f.right.kind).toBe("and");
+      if (f.right.kind === "and") {
+        expect(f.right.left.kind).toBe("D");
+        if (f.right.left.kind === "D") expect(f.right.left.coalition).toEqual(["b"]);
+        expect(f.right.right.kind).toBe("D");
+        if (f.right.right.kind === "D") expect(f.right.right.coalition).toEqual(["c"]);
+      }
+    }
+  });
+
   test("parse complex formula from Example 1", () => {
     const f = parseFormula("(~D{a,c} C{a,b} p & C{a,b} (p & q))");
     expect(f.kind).toBe("and");

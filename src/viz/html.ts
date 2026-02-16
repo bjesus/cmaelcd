@@ -4,7 +4,11 @@
  */
 
 import { type TableauResult } from "../core/types.ts";
-import { printFormula, printFormulaSet, printFormulaLatex } from "../core/printer.ts";
+import {
+  printFormula,
+  printFormulaSet,
+  printFormulaLatex,
+} from "../core/printer.ts";
 import { toDot } from "./text.ts";
 
 export function generateHTML(result?: TableauResult): string {
@@ -479,6 +483,7 @@ input[type="text"]::placeholder { color: #bbb; }
           <div class="syntax-item"><code>(p | q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\vee q)"></span></div>
           <div class="syntax-item"><code>(p -> q)</code> &mdash; <span class="katex-placeholder" data-tex="(p \\to q)"></span></div>
           <div class="syntax-item"><code>Ka p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{K}_a\\, p"></span> (agent <em>a</em> knows <em>p</em>)</div>
+          <div class="syntax-item"><code>K{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="(\\mathbf{K}_a\\, p \\wedge \\mathbf{K}_b\\, p)"></span> (a and b knows)</div>
           <div class="syntax-item"><code>D{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{D}_{\\{a,b\\}}\\, p"></span> (distributed knowledge)</div>
           <div class="syntax-item"><code>C{a,b} p</code> &mdash; <span class="katex-placeholder" data-tex="\\mathbf{C}_{\\{a,b\\}}\\, p"></span> (common knowledge)</div>
         </div>
@@ -619,6 +624,11 @@ input[type="text"]::placeholder { color: #bbb; }
           <td>Agent <em>a</em> knows <span class="katex-placeholder" data-tex="\\varphi"></span></td>
         </tr>
         <tr>
+          <td><span class="katex-placeholder" data-tex="\\bigwedge_{a \\in A} \\mathbf{K}_a \\varphi"></span></td>
+          <td><code>K{a,b} p</code></td>
+          <td>Every agent in <span class="katex-placeholder" data-tex="A"></span> individually knows <span class="katex-placeholder" data-tex="\\varphi"></span></td>
+        </tr>
+        <tr>
           <td><span class="katex-placeholder" data-tex="\\mathbf{D}_A \\varphi"></span></td>
           <td><code>D{a,b} p</code></td>
           <td>It is distributed knowledge among <span class="katex-placeholder" data-tex="A"></span> that <span class="katex-placeholder" data-tex="\\varphi"></span></td>
@@ -631,6 +641,7 @@ input[type="text"]::placeholder { color: #bbb; }
       </table>
       <p style="margin-top:8px;font-size:0.88em;color:var(--text-muted)">
         Note: <code>Ka p</code> is equivalent to <code>D{a} p</code> &mdash; individual knowledge is distributed knowledge for a singleton coalition.
+        <code>K{a,b} p</code> is syntactic sugar for <code>(Ka p &amp; Kb p)</code>.
       </p>
     </div>
 
