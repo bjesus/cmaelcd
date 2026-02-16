@@ -371,6 +371,13 @@ input[type="text"]::placeholder { color: #bbb; }
   color: var(--text-muted); cursor: pointer; user-select: none;
 }
 .graph-options input[type="checkbox"] { cursor: pointer; }
+.graph-options .download-btns { margin-left: auto; display: flex; gap: 6px; }
+.graph-dl-btn {
+  padding: 3px 10px; font-size: 0.72em; font-family: inherit; font-weight: 600;
+  color: var(--accent); background: var(--accent-light); border: 1px solid var(--border);
+  border-radius: 4px; cursor: pointer; transition: all 0.15s;
+}
+.graph-dl-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
 
 /* Elimination trace */
 .elimination-card {
@@ -526,6 +533,10 @@ input[type="text"]::placeholder { color: #bbb; }
           <div class="graph-options" id="graph-options" style="display:none">
             <label><input type="checkbox" id="opt-detailed" onchange="onGraphOptionChange()"> Detailed labels</label>
             <label id="opt-eliminated-label" style="display:none"><input type="checkbox" id="opt-eliminated" onchange="onGraphOptionChange()"> Show eliminated states</label>
+            <span class="download-btns">
+              <button class="graph-dl-btn" onclick="downloadSVG()">SVG</button>
+              <button class="graph-dl-btn" onclick="downloadPNG()">PNG</button>
+            </span>
           </div>
           <div id="graph-view" class="graph-container" onclick="openFullscreen()">
             <div class="graph-loading">Rendering graph...</div>
@@ -754,6 +765,66 @@ async function renderGraph(result, phase) {
   } catch(e) {
     container.innerHTML = '<div class="graph-loading">Error rendering graph: ' + e.message + '</div>';
   }
+}
+
+function getDownloadFilename(ext) {
+  return 'tableau-' + currentPhase + (document.getElementById('opt-detailed').checked ? '-detailed' : '') + '.' + ext;
+}
+
+async function getGraphSvgString() {
+  if (!lastResult) return null;
+  var dot = lastResult.dots[getDotKey()];
+  if (!dot) return null;
+  var viz = await getViz();
+  var svg = viz.renderSVGElement(dot);
+  // Ensure white background for export
+  svg.setAttribute('style', 'background: white');
+  var serializer = new XMLSerializer();
+  return serializer.serializeToString(svg);
+}
+
+async function downloadSVG() {
+  var svgStr = await getGraphSvgString();
+  if (!svgStr) return;
+  var blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = getDownloadFilename('svg');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function downloadPNG() {
+  var svgStr = await getGraphSvgString();
+  if (!svgStr) return;
+  var blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  var url = URL.createObjectURL(blob);
+  var img = new Image();
+  img.onload = function() {
+    var scale = 2; // 2x for crisp output
+    var canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth * scale;
+    canvas.height = img.naturalHeight * scale;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(function(pngBlob) {
+      var pngUrl = URL.createObjectURL(pngBlob);
+      var a = document.createElement('a');
+      a.href = pngUrl;
+      a.download = getDownloadFilename('png');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(pngUrl);
+    }, 'image/png');
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
 }
 
 // Fullscreen graph state
