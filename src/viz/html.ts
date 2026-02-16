@@ -203,7 +203,7 @@ input[type="text"]::placeholder { color: #bbb; }
 .result-banner .banner-stats {
   margin-left: auto; display: flex; gap: 14px; flex-shrink: 0;
 }
-.result-banner .banner-stat { text-align: center; line-height: 1.2; }
+.result-banner .banner-stat { text-align: center; line-height: 1.2; cursor: help; }
 .result-banner .banner-stat .num { font-size: 1.1em; font-weight: 700; opacity: 0.7; }
 .result-banner .banner-stat .label {
   font-size: 0.6em; font-weight: 500; text-transform: uppercase;
@@ -1225,10 +1225,11 @@ function solve() {
     if (empty) empty.style.display = 'none';
 
     const banner = document.getElementById('result-banner');
+    var pretableauNodes = result.stats.pretableauStates + result.stats.pretableauPrestates;
     var statsHtml = '<div class="banner-stats">' +
-      '<div class="banner-stat"><div class="num">' + result.stats.pretableauStates + '</div><div class="label">Pretableau</div></div>' +
-      '<div class="banner-stat"><div class="num">' + result.stats.initialStates + '</div><div class="label">Initial</div></div>' +
-      '<div class="banner-stat"><div class="num">' + result.stats.finalStates + '</div><div class="label">Final</div></div>' +
+      '<div class="banner-stat" title="Phase 1 (Construction): Total nodes in the pretableau graph (' + result.stats.pretableauPrestates + ' prestates + ' + result.stats.pretableauStates + ' states). Prestates are intermediate expansion nodes; states are fully expanded possible worlds."><div class="num">' + pretableauNodes + '</div><div class="label">Pretableau</div></div>' +
+      '<div class="banner-stat" title="Phase 2 (Prestate Elimination): States remaining after removing prestates and rewiring edges into direct state-to-state transitions. This is the starting point for state elimination."><div class="num">' + result.stats.initialStates + '</div><div class="label">Initial</div></div>' +
+      '<div class="banner-stat" title="Phase 3 (State Elimination): States surviving after removing defective states via rules E1 (missing successor) and E2 (unrealized eventuality). The formula is satisfiable iff this is greater than 0."><div class="num">' + result.stats.finalStates + '</div><div class="label">Final</div></div>' +
       '</div>';
     if (result.satisfiable) {
       banner.className = 'result-banner sat';
