@@ -73,21 +73,22 @@ body {
 .app-header .subtitle {
   font-size: 0.78em; opacity: 0.85; margin-top: 4px; line-height: 1.5;
 }
+.app-header .katex { color: white; font-size: 0.95em; }
 .app-header .credit {
   font-size: 0.72em; opacity: 0.65; margin-top: 8px; line-height: 1.4;
 }
 .app-header .credit a { color: white; text-decoration: underline; text-underline-offset: 2px; }
-.header-links {
-  margin-top: 10px; display: flex; gap: 10px;
+.left-footer {
+  padding: 8px 12px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; flex-shrink: 0;
 }
-.header-link {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 0.76em; color: white; opacity: 0.85; background: none;
-  border: 1px solid rgba(255,255,255,0.3); border-radius: 14px;
-  padding: 3px 12px; cursor: pointer; font-family: inherit;
-  transition: all 0.15s; text-decoration: none;
+.footer-btn {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px 0; font-size: 0.76em; font-family: inherit; font-weight: 500;
+  color: var(--accent); background: var(--accent-light); border: 1px solid var(--border);
+  border-radius: 6px; cursor: pointer; text-decoration: none; transition: all 0.15s;
 }
-.header-link:hover { opacity: 1; background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.5); }
+.footer-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
 
 /* Sections in left panel */
 .left-section {
@@ -438,12 +439,18 @@ input[type="text"]::placeholder { color: #bbb; }
   <div class="left-panel">
     <div class="app-header">
       <h1>Epistemic Logic Tableau Solver</h1>
-      <div class="subtitle">Satisfiability checker for CMAEL(CD)</div>
+      <div class="subtitle">
+        This tool checks whether a formula of <strong title="Complete Multiagent Epistemic Logic with Common and Distributed knowledge" style="cursor:help;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px">CMAEL(CD)</strong> is <em>satisfiable</em>: that is,
+        whether there exists a Kripke model and a state where the formula is true.
+        CMAEL(CD) extends standard multiagent epistemic logic with operators for <em>common knowledge</em>
+        (<span class="katex-placeholder" data-tex="\\mathbf{C}_A \\varphi"></span> &mdash; every agent in coalition
+        <span class="katex-placeholder" data-tex="A"></span> knows <span class="katex-placeholder" data-tex="\\varphi"></span>,
+        and everyone knows that everyone knows it, ad infinitum) and <em>distributed knowledge</em>
+        (<span class="katex-placeholder" data-tex="\\mathbf{D}_A \\varphi"></span> &mdash; <span class="katex-placeholder" data-tex="\\varphi"></span>
+        follows from the combined knowledge of all agents in <span class="katex-placeholder" data-tex="A"></span>).
+      </div>
       <div class="credit">
         Based on <a href="https://arxiv.org/abs/1201.5346" target="_blank" rel="noopener">Ajspur, Goranko &amp; Shkatov (2012)</a>
-      </div>
-      <div class="header-links">
-        <button class="header-link" onclick="openAboutModal()">How it works</button>
       </div>
     </div>
 
@@ -496,6 +503,10 @@ input[type="text"]::placeholder { color: #bbb; }
         </div>
       </div>
 
+    </div>
+    <div class="left-footer">
+      <button class="footer-btn" onclick="openAboutModal()">How it works</button>
+      <a class="footer-btn" href="https://github.com/bjesus/cmaelcd" target="_blank" rel="noopener">Source code</a>
     </div>
   </div>
 
@@ -558,21 +569,6 @@ input[type="text"]::placeholder { color: #bbb; }
   <div class="modal">
     <button class="modal-close" onclick="closeAboutModal()">&times;</button>
     <h2>How It Works</h2>
-
-    <div class="about-section">
-      <h3>What is this?</h3>
-      <p>
-        This tool checks whether a formula of <strong>CMAEL(CD)</strong> is <em>satisfiable</em>: that is,
-        whether there exists a Kripke model and a state where the formula is true.
-        CMAEL(CD) stands for <em>Complete Multiagent Epistemic Logic with Common and Distributed knowledge</em>.
-        It extends standard multiagent epistemic logic with operators for <em>common knowledge</em>
-        (<span class="katex-placeholder" data-tex="\\mathbf{C}_A \\varphi"></span> &mdash; every agent in coalition
-        <span class="katex-placeholder" data-tex="A"></span> knows <span class="katex-placeholder" data-tex="\\varphi"></span>,
-        and everyone knows that everyone knows it, ad infinitum) and <em>distributed knowledge</em>
-        (<span class="katex-placeholder" data-tex="\\mathbf{D}_A \\varphi"></span> &mdash; <span class="katex-placeholder" data-tex="\\varphi"></span>
-        follows from the combined knowledge of all agents in <span class="katex-placeholder" data-tex="A"></span>).
-      </p>
-    </div>
 
     <div class="about-section">
       <h3>The Algorithm</h3>
