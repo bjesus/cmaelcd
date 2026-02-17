@@ -9,6 +9,8 @@ import {
   type TableauResult,
   type Formula,
   type FormulaSet,
+  type Coalition,
+  type SolidEdge,
 } from "../core/types.ts";
 import { printFormula, printFormulaSet, printFormulaUnicode } from "../core/printer.ts";
 import { agentsInFormula } from "../core/formula.ts";
@@ -156,6 +158,116 @@ function nodeLabel(id: string, fs: FormulaSet, detailed: boolean): string {
 }
 
 /**
+ * Color palette for coalition/agent edges.
+ */
+const COALITION_COLORS = [
+  '#e41a1c', // red
+  '#377eb8', // blue
+  '#4daf4a', // green
+  '#984ea3', // purple
+  '#ff7f00', // orange
+  '#f4a582', // light orange
+  '#a65628', // brown
+  '#f781bf', // pink
+  '#999999', // gray
+  '#000000', // black
+];
+
+/**
+ * Extract the coalition from a diamond formula (¬D_A φ).
+ */
+function extractCoalitionFromFormula(f: Formula): Coalition | null {
+  if (f.kind === 'not' && f.sub.kind === 'D') {
+    return f.sub.coalition;
+  }
+  return null;
+}
+
+/**
+ * Extract all unique coalitions from edges in a tableau phase.
+ */
+function extractCoalitions(edges: SolidEdge[]): Coalition[] {
+  const coalitionSet = new Map<string, Coalition>();
+  
+  for (const edge of edges) {
+    const coalition = extractCoalitionFromFormula(edge.label);
+    if (coalition) {
+      const key = [...coalition].join(',');
+      coalitionSet.set(key, coalition);
+    }
+  }
+  
+  // Sort: by size first, then lexicographically
+  const coalitions = Array.from(coalitionSet.values());
+  coalitions.sort((a, b) => {
+    if (a.length !== b.length) return a.length - b.length;
+    return [...a].join(',').localeCompare([...b].join(','));
+  });
+  
+  return coalitions;
+}
+
+/**
+ * Assign colors to coalitions.
+ */
+function assignColors(coalitions: Coalition[]): Map<string, string> {
+  const colorMap = new Map<string, string>();
+  
+  for (let i = 0; i < coalitions.length; i++) {
+    const coalition = coalitions[i]!;
+    const key = [...coalition].join(',');
+    const color = i < COALITION_COLORS.length
+      ? COALITION_COLORS[i]!
+      : `hsl(${(i * 360) / coalitions.length}, 70%, 50%)`;
+    colorMap.set(key, color);
+  }
+  
+  return colorMap;
+}
+
+/**
+ * Format coalition for legend display.
+ */
+function formatCoalitionForLegend(coalition: Coalition): string {
+  if (coalition.length === 1) {
+    return coalition[0]!;
+  }
+  return `{${[...coalition].join(',')}}`;
+}
+
+/**
+ * Escape text for HTML-like labels in DOT.
+ */
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Generate DOT legend as HTML table.
+ */
+function generateLegend(coalitions: Coalition[], colorMap: Map<string, string>): string {
+  if (coalitions.length === 0) return '';
+  
+  let rows = '';
+  for (const coalition of coalitions) {
+    const key = [...coalition].join(',');
+    const color = colorMap.get(key);
+    if (!color) continue;
+    const label = formatCoalitionForLegend(coalition);
+    rows += `    <TR><TD WIDTH="24" HEIGHT="16" BGCOLOR="${color}"></TD><TD ALIGN="LEFT">${escapeHtml(label)}</TD></TR>\n`;
+  }
+  
+  return `  {
+    rank=min;
+    legend [shape=none, margin=0, label=<
+      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+        <TR><TD COLSPAN="2" BGCOLOR="#f5f5f5"><B>Agents</B></TD></TR>
+${rows}      </TABLE>
+    >];
+  }\n`;
+}
+
+/**
  * Generate DOT (Graphviz) format for a tableau.
  */
 export function toDot(
@@ -169,9 +281,24 @@ export function toDot(
   lines.push("digraph tableau {");
   lines.push("  rankdir=TB;");
   lines.push("  bgcolor=transparent;");
+  lines.push("  newrank=true;");
   lines.push('  node [shape=box, style="filled,rounded", fillcolor="#f8f9fa", color="#d0d0d0", fontsize=11, fontname="Helvetica"];');
   lines.push('  edge [fontsize=9, fontname="Helvetica", color="#888"];');
   lines.push("");
+
+  // Extract coalitions and assign colors
+  const edges = phase === "pretableau" 
+    ? result.pretableau.solidEdges 
+    : phase === "initial" 
+      ? result.initialTableau.edges 
+      : result.finalTableau.edges;
+  const coalitions = extractCoalitions(edges);
+  const colorMap = assignColors(coalitions);
+
+  // Add legend if there are any coalitions
+  if (coalitions.length > 0) {
+    lines.push(generateLegend(coalitions, colorMap));
+  }
 
   if (phase === "pretableau") {
     // Prestates as dashed ellipses
@@ -196,7 +323,9 @@ export function toDot(
     // Solid edges (state → prestate transitions)
     for (const edge of result.pretableau.solidEdges) {
       const label = printFormulaUnicode(edge.label);
-      lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", fontcolor="#4a6fa5"];`);
+      const coalition = extractCoalitionFromFormula(edge.label);
+      const color = coalition ? colorMap.get([...coalition].join(',')) || "#4a6fa5" : "#4a6fa5";
+      lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", color="${color}", fontcolor="${color}"];`);
     }
   } else {
     const tableau = phase === "initial" ? result.initialTableau : result.finalTableau;
@@ -237,18 +366,24 @@ export function toDot(
         lines.push(`  "${id}" [label="${escDot(elimLabel)}", fillcolor="#fee2e2", color="#e5a0a0", fontcolor="#999", style="filled,rounded,dashed", tooltip="${escDot(tooltip)}"];`);
       }
 
-      // Show edges involving eliminated states as dashed/gray
+      // Show edges involving eliminated states as dashed with reduced opacity
       for (const edge of result.initialTableau.edges) {
         if (tableau.states.has(edge.from) && tableau.states.has(edge.to)) continue; // already shown below
         const label = printFormulaUnicode(edge.label);
-        lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", fontcolor="#ccc", color="#ddd", style=dashed];`);
+        const coalition = extractCoalitionFromFormula(edge.label);
+        const baseColor = coalition ? colorMap.get([...coalition].join(',')) || "#888" : "#888";
+        // Create lighter version by using opacity in hex (add 99 for ~60% opacity)
+        const lightColor = baseColor + "66";
+        lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", fontcolor="${lightColor}", color="${lightColor}", style=dashed];`);
       }
     }
 
     // Surviving edges
     for (const edge of tableau.edges) {
       const label = printFormulaUnicode(edge.label);
-      lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", fontcolor="#4a6fa5"];`);
+      const coalition = extractCoalitionFromFormula(edge.label);
+      const color = coalition ? colorMap.get([...coalition].join(',')) || "#4a6fa5" : "#4a6fa5";
+      lines.push(`  "${edge.from}" -> "${edge.to}" [label=" ${escDot(label)} ", color="${color}", fontcolor="${color}"];`);
     }
   }
 
