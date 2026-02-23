@@ -21,6 +21,7 @@ export function generateHTML(result?: TableauResult): string {
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"><\/script>
 <style>
 :root {
   --bg: #f4f5f7;
@@ -272,15 +273,17 @@ input[type="text"]::placeholder { color: #bbb; }
 
 /* Graph view */
 .graph-container {
-  overflow: auto; background: var(--surface-alt); border-radius: 6px;
-  border: 1px solid var(--border); padding: 12px; margin-bottom: 12px;
-  min-height: 100px; text-align: center; cursor: pointer; position: relative;
+  overflow: hidden; background: var(--surface-alt); border-radius: 6px;
+  border: 1px solid var(--border); margin-bottom: 12px;
+  height: 500px; position: relative; /* Fixed height for interactive graph */
 }
-.graph-container svg { max-width: 100%; height: auto; }
-.graph-loading { color: var(--text-muted); font-style: italic; font-size: 0.82em; padding: 20px; }
+.graph-loading { 
+  display: flex; align-items: center; justify-content: center; height: 100%;
+  color: var(--text-muted); font-style: italic; font-size: 0.82em; 
+}
 .graph-hint {
   position: absolute; bottom: 8px; right: 12px; font-size: 0.7em;
-  color: var(--text-muted); opacity: 0.7; pointer-events: none;
+  color: var(--text-muted); opacity: 0.7; pointer-events: none; z-index: 10;
 }
 
 /* Fullscreen overlay */
@@ -303,11 +306,7 @@ input[type="text"]::placeholder { color: #bbb; }
 }
 .graph-fs-close:hover { background: var(--border); }
 .graph-fs-viewport {
-  flex: 1; overflow: hidden; cursor: grab; position: relative;
-}
-.graph-fs-viewport:active { cursor: grabbing; }
-.graph-fs-viewport svg {
-  position: absolute; transform-origin: 0 0;
+  flex: 1; overflow: hidden; position: relative;
 }
 
 /* About modal */
@@ -411,7 +410,36 @@ input[type="text"]::placeholder { color: #bbb; }
 
 #result-section { display: none; }
 
-/* Loading */
+/* Graph filters */
+.graph-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.filter-group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 24px; }
+.filter-label { font-size: 0.72em; font-weight: 600; color: var(--text-muted); margin-right: 4px; text-transform: uppercase; min-width: 45px; }
+.filter-chip {
+  padding: 2px 8px; border-radius: 12px; border: 1px solid var(--border);
+  font-size: 0.76em; cursor: pointer; user-select: none; transition: all 0.15s;
+  background: var(--surface); color: var(--text); display: flex; align-items: center; gap: 6px;
+}
+.filter-chip:hover { background: var(--surface-alt); border-color: var(--accent); }
+.filter-chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+.filter-chip .color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.filter-chip.active .color-dot { box-shadow: 0 0 0 1px white; }
+
+/* Dimming classes for D3 */
+.d3-dimmed { opacity: 0.1 !important; transition: opacity 0.2s; }
+.d3-highlight { opacity: 1 !important; stroke-width: 2px; }
+
+/* Tooltip for D3 graph */
+.d3-tooltip {
+  position: absolute; pointer-events: none;
+  background: white; border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  font-size: 0.82em; color: var(--text);
+  max-width: 300px; z-index: 1000;
+  display: none;
+}
+.d3-tooltip .title { font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 4px; }
+.d3-tooltip .content { line-height: 1.4; }
 
 /* === Responsive: single column on mobile === */
 @media (max-width: 768px) {
@@ -541,6 +569,18 @@ input[type="text"]::placeholder { color: #bbb; }
             <button class="phase-tab" data-phase="initial" onclick="showPhase('initial', this)">Initial Tableau</button>
             <button class="phase-tab" data-phase="pretableau" onclick="showPhase('pretableau', this)">Pretableau</button>
           </div>
+          
+          <div class="graph-filters" id="graph-filters" style="display:none">
+            <div class="filter-group">
+              <div class="filter-label">Agents</div>
+              <div id="agent-filters" style="display:contents"></div>
+            </div>
+            <div class="filter-group">
+              <div class="filter-label">Atoms</div>
+              <div id="atom-filters" style="display:contents"></div>
+            </div>
+          </div>
+
           <div class="graph-options" id="graph-options" style="display:none">
             <label><input type="checkbox" id="opt-detailed" onchange="onGraphOptionChange()"> Detailed labels</label>
             <label id="opt-eliminated-label" style="display:none"><input type="checkbox" id="opt-eliminated" onchange="onGraphOptionChange()"> Show eliminated states</label>
@@ -676,38 +716,111 @@ input[type="text"]::placeholder { color: #bbb; }
 
 <script>
 let lastResult = null;
+let lastRawResult = null;
 let currentPhase = 'final';
 let currentView = 'graph';
 let vizInstance = null;
 let vizLoading = false;
+let selectedAgents = new Set();
+let selectedAtoms = new Set();
 
-// Compute the DOT key based on current phase and options
-function getDotKey() {
-  const detailed = document.getElementById('opt-detailed').checked;
-  const showElim = document.getElementById('opt-eliminated').checked;
-  if (currentPhase === 'pretableau') return detailed ? 'pretableauDetailed' : 'pretableau';
-  if (currentPhase === 'initial') return detailed ? 'initialDetailed' : 'initial';
-  // final phase
-  if (detailed && showElim) return 'finalDetailedEliminated';
-  if (detailed) return 'finalDetailed';
-  if (showElim) return 'finalEliminated';
-  return 'final';
+const COALITION_COLORS = [
+  '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
+  '#f4a582', '#a65628', '#f781bf', '#999999', '#000000'
+];
+
+function assignColorsToCoalitions(edges) {
+  const map = new Map();
+  const unique = new Set();
+  edges.forEach(e => {
+    if (e.coalition) unique.add(e.coalition.join(','));
+  });
+  
+  const sorted = Array.from(unique).sort((a, b) => {
+    const al = a.split(',').length;
+    const bl = b.split(',').length;
+    if (al !== bl) return al - bl;
+    return a.localeCompare(b);
+  });
+
+  sorted.forEach((key, i) => {
+    const color = i < COALITION_COLORS.length 
+      ? COALITION_COLORS[i] 
+      : 'hsl(' + ((i * 360) / sorted.length) + ', 70%, 50%)';
+    map.set(key, color);
+  });
+  return map;
+}
+
+function solve() {
+  const formula = document.getElementById('formula-input').value.trim();
+  if (!formula) return;
+
+  const restrictedCuts = document.getElementById('restricted-cuts').checked;
+  const errorEl = document.getElementById('parse-error');
+  errorEl.style.display = 'none';
+
+  try {
+    lastRawResult = solveFormula(formula, '', restrictedCuts);
+    lastResult = serializeResult(lastRawResult);
+    
+    selectedAgents.clear();
+    selectedAtoms.clear();
+
+    const section = document.getElementById('result-section');
+    section.style.display = 'block';
+    var empty = document.getElementById('right-empty');
+    if (empty) empty.style.display = 'none';
+
+    renderBanner(lastResult);
+    renderEliminationTrace(lastResult);
+
+    document.getElementById('opt-detailed').checked = false;
+    document.getElementById('opt-eliminated').checked = false;
+    updateGraphOptionsVisibility();
+
+    showPhase('final', document.querySelector('.phase-tab[data-phase="final"]'));
+
+  } catch (e) {
+    console.error(e);
+    errorEl.textContent = e.message;
+    errorEl.style.display = 'block';
+  }
+}
+
+function renderBanner(result) {
+  const banner = document.getElementById('result-banner');
+  var pretableauNodes = result.stats.pretableauStates + result.stats.pretableauPrestates;
+  var statsHtml = '<div class="banner-stats">' +
+    '<div class="banner-stat" title="Phase 1 (Construction)"><div class="num">' + pretableauNodes + '</div><div class="label">Pretableau</div></div>' +
+    '<div class="banner-stat" title="Phase 2 (Prestate Elimination)"><div class="num">' + result.stats.initialStates + '</div><div class="label">Initial</div></div>' +
+    '<div class="banner-stat" title="Phase 3 (State Elimination)"><div class="num">' + result.stats.finalStates + '</div><div class="label">Final</div></div>' +
+    '</div>';
+  
+  if (result.satisfiable) {
+    banner.className = 'result-banner sat';
+    banner.innerHTML = '<span class="icon">&#10003;</span><div><div>Satisfiable</div>' +
+      '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
+  } else {
+    banner.className = 'result-banner unsat';
+    banner.innerHTML = '<span class="icon">&#10007;</span><div><div>Unsatisfiable</div>' +
+      '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
+  }
+  banner.querySelectorAll('[data-tex]').forEach(function(el) {
+    renderLatex(el, el.dataset.tex);
+  });
 }
 
 function onGraphOptionChange() {
   if (currentView === 'graph' && lastResult) {
-    renderGraph(lastResult, currentPhase);
-  }
-  // Update DOT output too
-  if (lastResult) {
-    var dotBox = document.getElementById('dot-box');
-    dotBox.textContent = lastResult.dots[getDotKey()] || '';
+    renderGraph();
   }
 }
 
 function updateGraphOptionsVisibility() {
-  document.getElementById('graph-options').style.display = currentView === 'graph' ? 'flex' : 'none';
-  // Show "eliminated" checkbox only on final phase and when there are eliminations
+  const isGraph = currentView === 'graph';
+  document.getElementById('graph-options').style.display = isGraph ? 'flex' : 'none';
+  document.getElementById('graph-filters').style.display = isGraph ? 'flex' : 'none';
   var showElimLabel = document.getElementById('opt-eliminated-label');
   var hasElims = lastResult && lastResult.eliminations && lastResult.eliminations.length > 0;
   showElimLabel.style.display = (currentPhase === 'final' && hasElims) ? '' : 'none';
@@ -715,21 +828,8 @@ function updateGraphOptionsVisibility() {
 
 async function getViz() {
   if (vizInstance) return vizInstance;
-  if (typeof Viz === 'undefined') {
-    throw new Error('Viz.js not loaded');
-  }
-  if (vizLoading) {
-    // Wait for existing load
-    while (vizLoading) await new Promise(r => setTimeout(r, 50));
-    return vizInstance;
-  }
-  vizLoading = true;
-  try {
-    vizInstance = await Viz.instance();
-    return vizInstance;
-  } finally {
-    vizLoading = false;
-  }
+  vizInstance = await Viz.instance();
+  return vizInstance;
 }
 
 function setView(view) {
@@ -740,255 +840,496 @@ function setView(view) {
   document.getElementById('graph-view').style.display = view === 'graph' ? 'block' : 'none';
   updateGraphOptionsVisibility();
   if (view === 'graph' && lastResult) {
-    renderGraph(lastResult, currentPhase);
+    renderGraph();
   }
 }
 
-async function renderGraph(result, phase) {
-  const container = document.getElementById('graph-view');
-  const dotKey = getDotKey();
-  const dot = result.dots[dotKey];
-  if (!dot) {
-    container.innerHTML = '<div class="graph-loading">No graph data available</div>';
-    return;
+function showPhase(phase, btn) {
+  currentPhase = phase;
+  document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  updateGraphOptionsVisibility();
+  if (lastResult) {
+    displayPhase(lastResult, phase);
+    if (currentView === 'graph') {
+      renderGraph();
+    }
   }
-  container.innerHTML = '<div class="graph-loading">Rendering graph...</div><div class="graph-hint">Click to expand</div>';
+}
+
+function displayPhase(result, phase) {
+  const container = document.getElementById('phase-content');
+  let html = '';
+  let states, edges;
+  const data = getPhaseData(result, phase);
+  states = data.states;
+  edges = data.edges;
+  const prestates = data.prestates || {};
+
+  html += '<div class="section-label">States (' + Object.keys(states).length + ')</div>';
+  html += '<div class="state-list">';
+  if (Object.keys(states).length === 0) {
+    html += '<div class="empty-notice">No states</div>';
+  }
+  for (const [id, s] of Object.entries(states)) {
+    html += '<div class="state-item' + (s.hasInput ? ' has-input' : '') + '">';
+    html += '<div class="state-id">' + id + '</div>';
+    html += '<div class="state-formulas" data-tex="' + escAttr(s.formulasLatex) + '"></div>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  if (Object.keys(prestates).length > 0) {
+    html += '<div class="section-label">Prestates (' + Object.keys(prestates).length + ')</div>';
+    html += '<div class="state-list">';
+    for (const [id, s] of Object.entries(prestates)) {
+      html += '<div class="state-item" style="border-left-color:#999;border-style:dashed">';
+      html += '<div class="state-id">' + id + ' (prestate)</div>';
+      html += '<div class="state-formulas" data-tex="' + escAttr(s.formulasLatex) + '"></div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '<div class="section-label">Edges (' + edges.length + ')</div>';
+  html += '<div class="state-list">';
+  if (edges.length === 0) html += '<div class="empty-notice">No edges</div>';
+  for (const e of edges) {
+    html += '<div class="edge-item">';
+    html += '<span style="font-weight:600;color:var(--accent)">' + e.from + '</span>';
+    html += '<span class="edge-arrow">&xrarr;</span>';
+    html += '<span style="font-weight:600;color:var(--accent)">' + e.to + '</span>';
+    html += '<span style="color:var(--text-muted);font-size:0.85em">via</span>';
+    html += '<span class="edge-label" data-tex="' + escAttr(e.labelLatex) + '"></span>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  container.innerHTML = html;
+  container.querySelectorAll('[data-tex]').forEach(function(el) {
+    renderLatex(el, el.dataset.tex);
+  });
+  
+  updateDotBox();
+}
+
+function getPhaseData(result, phase) {
+  if (phase === 'pretableau') return { 
+    states: result.pretableau.states, 
+    prestates: result.pretableau.prestates,
+    edges: result.pretableau.solidEdges 
+  };
+  if (phase === 'initial') return result.initialTableau;
+  return result.finalTableau;
+}
+
+function parseSpline(posStr) {
+  if (!posStr) return null;
+  const parts = posStr.split(' ');
+  const points = [];
+  for (const p of parts) {
+    if (p.startsWith('e,') || p.startsWith('s,')) continue; // ignore start/end for path
+    const [x, y] = p.split(',');
+    points.push({x: +x, y: -y});
+  }
+  return points;
+}
+
+function generateSplinePath(points) {
+  if (!points || !points.length) return '';
+  let path = 'M ' + points[0].x + ' ' + points[0].y;
+  for (let i = 1; i < points.length; i += 3) {
+    if (i + 2 < points.length) {
+      path += ' C ' + points[i].x + ' ' + points[i].y + ', ' + 
+              points[i+1].x + ' ' + points[i+1].y + ', ' + 
+              points[i+2].x + ' ' + points[i+2].y;
+    }
+  }
+  return path;
+}
+
+async function renderGraph() {
+  const container = document.getElementById('graph-view');
+  container.innerHTML = '<div class="graph-loading">Computing layout...</div>';
+  
+  populateFilters(); // Update filters
+
   try {
     const viz = await getViz();
-    const svg = viz.renderSVGElement(dot);
-    container.innerHTML = '<div class="graph-hint">Click to expand</div>';
-    container.insertBefore(svg, container.firstChild);
-  } catch(e) {
-    container.innerHTML = '<div class="graph-loading">Error rendering graph: ' + e.message + '</div>';
+    const showElim = document.getElementById('opt-eliminated').checked;
+    
+    const dot = generateDot(lastRawResult, currentPhase, { 
+      layoutOnly: true, 
+      showEliminated: showElim 
+    });
+    
+    const json = await viz.renderJSON(dot);
+    drawD3Graph(json, container);
+    updateDotBox();
+    
+  } catch (e) {
+    console.error(e);
+    container.innerHTML = '<div class="graph-loading">Error: ' + e.message + '</div>';
   }
 }
 
-function getDownloadFilename(ext) {
-  return 'tableau-' + currentPhase + (document.getElementById('opt-detailed').checked ? '-detailed' : '') + '.' + ext;
+function drawD3Graph(layout, container) {
+  container.innerHTML = '';
+  
+  // D3 Tooltip
+  let tooltip = d3.select('body').select('.d3-tooltip');
+  if (tooltip.empty()) {
+    tooltip = d3.select('body').append('div').attr('class', 'd3-tooltip');
+  }
+
+  const data = getPhaseData(lastResult, currentPhase);
+  const colorMap = assignColorsToCoalitions(data.edges);
+  
+  // Filter objects
+  const objects = (layout.objects || []).filter(o => o.name !== 'cluster' && o.name !== 'graph' && o.pos);
+  const edges = (layout.edges || []).filter(e => e.pos);
+  
+  if (objects.length === 0) {
+    container.innerHTML = '<div class="graph-loading">No states to display</div>';
+    return;
+  }
+
+  // Parse nodes
+  const nodes = objects.map(o => {
+    const [x, y] = o.pos.split(',');
+    const id = o.name;
+    const stateData = data.states[id] || (data.prestates ? data.prestates[id] : null);
+    // Graphviz uses inches, 72pts/inch
+    return {
+      id,
+      x: +x,
+      y: -y,
+      width: (+o.width || 0.75) * 72,
+      height: (+o.height || 0.5) * 72,
+      data: stateData,
+      isPrestate: !!(data.prestates && data.prestates[id]),
+      isEliminated: !stateData && currentPhase === 'final' // heuristic
+    };
+  });
+  
+  const nodesMap = new Map(nodes.map(n => [n.id, n]));
+  
+  // Parse edges
+  const links = edges.map(e => {
+    const sourceId = objects[e.tail].name;
+    const targetId = objects[e.head].name;
+    const points = parseSpline(e.pos);
+    
+    // Find matching edge data
+    // Warning: this simple matching assumes only one edge type between nodes or generic label matching
+    // For now, we take the first matching edge in data
+    const edgeData = data.edges.find(ed => ed.from === sourceId && ed.to === targetId);
+    
+    return {
+      source: nodesMap.get(sourceId),
+      target: nodesMap.get(targetId),
+      points,
+      data: edgeData,
+      color: edgeData ? colorMap.get(edgeData.coalition ? edgeData.coalition.join(',') : '') || '#999' : '#999'
+    };
+  }).filter(l => l.source && l.target);
+
+  // Setup SVG
+  const width = container.clientWidth;
+  const height = 500;
+  
+  const svg = d3.select(container).append('svg')
+    .attr('width', '100%')
+    .attr('height', '100%')
+    .attr('viewBox', [0, 0, width, height]);
+    
+  const g = svg.append('g');
+  
+  // Zoom
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 8])
+    .on('zoom', e => g.attr('transform', e.transform));
+    
+  svg.call(zoom);
+  
+  // Initial center
+  if (nodes.length > 0) {
+    const bounds = {
+      minX: Math.min(...nodes.map(n => n.x - n.width/2)),
+      maxX: Math.max(...nodes.map(n => n.x + n.width/2)),
+      minY: Math.min(...nodes.map(n => n.y - n.height/2)),
+      maxY: Math.max(...nodes.map(n => n.y + n.height/2)),
+    };
+    const gw = bounds.maxX - bounds.minX + 100;
+    const gh = bounds.maxY - bounds.minY + 100;
+    const scale = Math.min(width/gw, height/gh, 1.2);
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    
+    svg.call(zoom.transform, d3.zoomIdentity
+      .translate(width/2, height/2)
+      .scale(scale)
+      .translate(-cx, -cy));
+  }
+
+  // Arrowheads
+  const defs = svg.append('defs');
+  colorMap.forEach((color, key) => {
+    const id = 'arrow-' + key.replace(/[^a-z0-9]/gi, '_');
+    defs.append('marker')
+      .attr('id', id)
+      .attr('viewBox', '0 -5 10 10')
+      .attr('refX', 10)
+      .attr('refY', 0)
+      .attr('markerWidth', 6)
+      .attr('markerHeight', 6)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,-5L10,0L0,5')
+      .attr('fill', color);
+  });
+  // Default arrow
+  defs.append('marker')
+    .attr('id', 'arrow-default')
+    .attr('viewBox', '0 -5 10 10')
+    .attr('refX', 10)
+    .attr('refY', 0)
+    .attr('markerWidth', 6)
+    .attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('path')
+    .attr('d', 'M0,-5L10,0L0,5')
+    .attr('fill', '#999');
+
+  // Draw edges
+  g.selectAll('.edge')
+    .data(links)
+    .enter().append('path')
+    .attr('class', 'edge')
+    .attr('d', d => generateSplinePath(d.points))
+    .attr('fill', 'none')
+    .attr('stroke', d => d.color)
+    .attr('stroke-width', 1.5)
+    .attr('marker-end', d => {
+      if (!d.data || !d.data.coalition) return 'url(#arrow-default)';
+      return 'url(#arrow-' + d.data.coalition.join(',').replace(/[^a-z0-9]/gi, '_') + ')';
+    });
+
+  // Draw nodes
+  const nodeGroups = g.selectAll('.node')
+    .data(nodes)
+    .enter().append('g')
+    .attr('class', 'node')
+    .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')')
+    .style('cursor', 'pointer');
+
+  // Node shape
+  nodeGroups.append('rect')
+    .attr('x', d => -d.width/2)
+    .attr('y', d => -d.height/2)
+    .attr('width', d => d.width)
+    .attr('height', d => d.height)
+    .attr('rx', d => d.isPrestate ? d.width : 4) // Ellipse-ish for prestates
+    .attr('ry', d => d.isPrestate ? d.height : 4)
+    .attr('fill', d => {
+      if (d.isEliminated) return '#fee2e2';
+      if (d.data && d.data.hasInput) return '#dcfce7';
+      return '#f8f9fa';
+    })
+    .attr('stroke', d => {
+      if (d.isEliminated) return '#e5a0a0';
+      if (d.data && d.data.hasInput) return '#86d997';
+      return '#d0d0d0';
+    })
+    .attr('stroke-width', d => (d.data && d.data.hasInput) ? 2 : 1)
+    .style('stroke-dasharray', d => (d.isPrestate || d.isEliminated) ? '4 2' : 'none');
+
+  // Node label (State ID)
+  nodeGroups.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dy', '-0.4em')
+    .attr('font-size', '10px')
+    .attr('font-weight', 'bold')
+    .attr('fill', '#444')
+    .text(d => d.id);
+
+  // Valuation label (p, ¬q)
+  nodeGroups.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dy', '0.8em')
+    .attr('font-size', '9px')
+    .attr('fill', '#666')
+    .text(d => {
+      if (!d.data || !d.data.atoms) return '';
+      const parts = d.data.atoms.map(a => a.value ? a.name : '¬' + a.name);
+      if (parts.length === 0) return '';
+      if (parts.length > 3) return parts.slice(0, 3).join(',') + '...';
+      return parts.join(', ');
+    });
+
+  // Hover events
+  nodeGroups.on('mouseenter', (e, d) => {
+    if (!d.data || !d.data.formulaListLatex) return;
+    
+    // Show tooltip
+    tooltip.style('display', 'block')
+      .style('left', (e.pageX + 15) + 'px')
+      .style('top', (e.pageY + 15) + 'px')
+      .html('<div class="title">' + d.id + '</div>' + 
+            '<div class="content">' + 
+            d.data.formulaListLatex.map(f => '<div><span data-tex="' + escAttr(f) + '"></span></div>').join('') + 
+            '</div>');
+            
+    tooltip.selectAll('[data-tex]').each(function() {
+      renderLatex(this, this.dataset.tex);
+    });
+  })
+  .on('mousemove', (e) => {
+    tooltip.style('left', (e.pageX + 15) + 'px')
+      .style('top', (e.pageY + 15) + 'px');
+  })
+  .on('mouseleave', () => {
+    tooltip.style('display', 'none');
+  });
+  
+  updateHighlights();
 }
 
-async function getGraphSvgString() {
-  if (!lastResult) return null;
-  var dot = lastResult.dots[getDotKey()];
-  if (!dot) return null;
-  var viz = await getViz();
-  var svg = viz.renderSVGElement(dot);
-  // Ensure white background for export
-  svg.setAttribute('style', 'background: white');
-  var serializer = new XMLSerializer();
-  return serializer.serializeToString(svg);
-}
-
-async function downloadSVG() {
-  var svgStr = await getGraphSvgString();
-  if (!svgStr) return;
-  var blob = new Blob([svgStr], { type: 'image/svg+xml' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = getDownloadFilename('svg');
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-async function downloadPNG() {
-  var svgStr = await getGraphSvgString();
-  if (!svgStr) return;
-  var blob = new Blob([svgStr], { type: 'image/svg+xml' });
-  var url = URL.createObjectURL(blob);
-  var img = new Image();
-  img.onload = function() {
-    var scale = 2; // 2x for crisp output
-    var canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth * scale;
-    canvas.height = img.naturalHeight * scale;
-    var ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob(function(pngBlob) {
-      var pngUrl = URL.createObjectURL(pngBlob);
-      var a = document.createElement('a');
-      a.href = pngUrl;
-      a.download = getDownloadFilename('png');
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(pngUrl);
-    }, 'image/png');
-    URL.revokeObjectURL(url);
-  };
-  img.src = url;
-}
-
-// Fullscreen graph state
-let fsScale = 1;
-let fsPanX = 0;
-let fsPanY = 0;
-let fsDragging = false;
-let fsDragStartX = 0;
-let fsDragStartY = 0;
-let fsPanStartX = 0;
-let fsPanStartY = 0;
-
-function openFullscreen() {
+function populateFilters() {
   if (!lastResult) return;
-  const dot = lastResult.dots[getDotKey()];
-  if (!dot) return;
-
-  const overlay = document.getElementById('graph-fullscreen');
-  const viewport = document.getElementById('graph-fs-viewport');
-  const phaseNames = { final: 'Final Tableau', initial: 'Initial Tableau', pretableau: 'Pretableau' };
-  document.getElementById('graph-fs-title').textContent = phaseNames[currentPhase] || 'Graph';
-
-  overlay.classList.add('open');
-  document.body.style.overflow = 'hidden';
-
-  // Render SVG into fullscreen viewport
-  getViz().then(function(viz) {
-    const svg = viz.renderSVGElement(dot);
-    viewport.innerHTML = '';
-    viewport.appendChild(svg);
-
-    // Reset transform
-    fsScale = 1;
-    fsPanX = 0;
-    fsPanY = 0;
-
-    // Center the SVG
-    const vw = viewport.clientWidth;
-    const vh = viewport.clientHeight;
-    const sw = svg.viewBox.baseVal.width || svg.getBBox().width;
-    const sh = svg.viewBox.baseVal.height || svg.getBBox().height;
-
-    // Remove fixed width/height so we control via transform
-    svg.removeAttribute('width');
-    svg.removeAttribute('height');
-    svg.style.width = sw + 'px';
-    svg.style.height = sh + 'px';
-
-    // Fit to viewport
-    const fitScale = Math.min(vw / sw, vh / sh, 1.5) * 0.9;
-    fsScale = fitScale;
-    fsPanX = (vw - sw * fsScale) / 2;
-    fsPanY = (vh - sh * fsScale) / 2;
-    applyFsTransform(svg);
-  }).catch(function() {
-    viewport.innerHTML = '<div style="padding:40px;color:#999">Failed to render graph</div>';
+  
+  const agentsDiv = document.getElementById('agent-filters');
+  const atomsDiv = document.getElementById('atom-filters');
+  agentsDiv.innerHTML = '';
+  atomsDiv.innerHTML = '';
+  
+  lastResult.agents.forEach((a, i) => {
+    const el = document.createElement('div');
+    el.className = 'filter-chip';
+    if (selectedAgents.has(a)) el.classList.add('active');
+    
+    // Simple color cycle matching COALITION_COLORS for singletons (approx)
+    const color = COALITION_COLORS[i % COALITION_COLORS.length];
+    
+    el.innerHTML = '<div class="color-dot" style="background:'+color+'"></div>' + a;
+    el.onclick = () => {
+      if (selectedAgents.has(a)) selectedAgents.delete(a);
+      else selectedAgents.add(a);
+      populateFilters();
+      updateHighlights();
+    };
+    agentsDiv.appendChild(el);
+  });
+  
+  lastResult.atoms.forEach(p => {
+    const el = document.createElement('div');
+    el.className = 'filter-chip';
+    if (selectedAtoms.has(p)) el.classList.add('active');
+    el.textContent = p;
+    el.onclick = () => {
+      if (selectedAtoms.has(p)) selectedAtoms.delete(p);
+      else selectedAtoms.add(p);
+      populateFilters();
+      updateHighlights();
+    };
+    atomsDiv.appendChild(el);
   });
 }
 
-function closeFullscreen() {
-  const overlay = document.getElementById('graph-fullscreen');
-  overlay.classList.remove('open');
-  document.body.style.overflow = '';
-  document.getElementById('graph-fs-viewport').innerHTML = '';
-}
-
-function applyFsTransform(svg) {
-  if (!svg) return;
-  svg.style.transform = 'translate(' + fsPanX + 'px, ' + fsPanY + 'px) scale(' + fsScale + ')';
-}
-
-function getFsSvg() {
-  return document.querySelector('#graph-fs-viewport svg');
-}
-
-// Wheel zoom
-document.addEventListener('wheel', function(e) {
-  const overlay = document.getElementById('graph-fullscreen');
-  if (!overlay.classList.contains('open')) return;
-  const viewport = document.getElementById('graph-fs-viewport');
-  if (!viewport.contains(e.target) && e.target !== viewport) return;
-
-  e.preventDefault();
-  const svg = getFsSvg();
-  if (!svg) return;
-
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-
-  const oldScale = fsScale;
-  const zoomFactor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-  fsScale = Math.max(0.1, Math.min(10, fsScale * zoomFactor));
-
-  // Zoom toward cursor position
-  fsPanX = mx - (mx - fsPanX) * (fsScale / oldScale);
-  fsPanY = my - (my - fsPanY) * (fsScale / oldScale);
-
-  applyFsTransform(svg);
-}, { passive: false });
-
-// Mouse drag pan
-document.addEventListener('mousedown', function(e) {
-  const overlay = document.getElementById('graph-fullscreen');
-  if (!overlay.classList.contains('open')) return;
-  const viewport = document.getElementById('graph-fs-viewport');
-  if (!viewport.contains(e.target) && e.target !== viewport) return;
-
-  fsDragging = true;
-  fsDragStartX = e.clientX;
-  fsDragStartY = e.clientY;
-  fsPanStartX = fsPanX;
-  fsPanStartY = fsPanY;
-  e.preventDefault();
-});
-
-document.addEventListener('mousemove', function(e) {
-  if (!fsDragging) return;
-  fsPanX = fsPanStartX + (e.clientX - fsDragStartX);
-  fsPanY = fsPanStartY + (e.clientY - fsDragStartY);
-  const svg = getFsSvg();
-  if (svg) applyFsTransform(svg);
-});
-
-document.addEventListener('mouseup', function() {
-  fsDragging = false;
-});
-
-// Esc to close overlays
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') {
-    const graphOverlay = document.getElementById('graph-fullscreen');
-    if (graphOverlay.classList.contains('open')) {
-      closeFullscreen();
-      e.preventDefault();
-      return;
-    }
-    const aboutModal = document.getElementById('about-modal');
-    if (aboutModal.classList.contains('open')) {
-      closeAboutModal();
-      e.preventDefault();
-    }
+function updateHighlights() {
+  const svg = d3.select('#graph-view svg');
+  if (svg.empty()) return;
+  
+  const nodes = svg.selectAll('.node');
+  const edges = svg.selectAll('.edge');
+  
+  if (selectedAgents.size === 0 && selectedAtoms.size === 0) {
+    nodes.classed('d3-dimmed', false);
+    edges.classed('d3-dimmed', false);
+    return;
   }
-});
-
-let aboutRendered = false;
-function openAboutModal() {
-  const modal = document.getElementById('about-modal');
-  modal.classList.add('open');
-  document.body.style.overflow = 'hidden';
-  // Render KaTeX in the modal on first open
-  if (!aboutRendered) {
-    modal.querySelectorAll('.katex-placeholder').forEach(function(el) {
-      if (el.dataset.tex) {
-        renderLatex(el, el.dataset.tex);
-        el.classList.remove('katex-placeholder');
+  
+  edges.classed('d3-dimmed', d => {
+    if (selectedAgents.size === 0) return false;
+    if (!d.data || !d.data.coalition) return true;
+    return !d.data.coalition.some(a => selectedAgents.has(a));
+  });
+  
+  nodes.classed('d3-dimmed', d => {
+    let atomMatch = true;
+    if (selectedAtoms.size > 0) {
+      if (!d.data || !d.data.atoms) atomMatch = false;
+      else {
+        atomMatch = Array.from(selectedAtoms).every(atom => 
+          d.data.atoms.some(a => a.name === atom && a.value === true)
+        );
       }
+    }
+    return !atomMatch;
+  });
+}
+
+function updateDotBox() {
+  const box = document.getElementById('dot-box');
+  if (box.style.display !== 'none') {
+    const detailed = document.getElementById('opt-detailed').checked;
+    const showElim = document.getElementById('opt-eliminated').checked;
+    box.textContent = generateDot(lastRawResult, currentPhase, {
+      detailedLabels: detailed,
+      showEliminated: showElim
     });
-    aboutRendered = true;
   }
 }
-function closeAboutModal() {
-  const modal = document.getElementById('about-modal');
-  modal.classList.remove('open');
-  // Only restore scroll if fullscreen graph isn't also open
-  if (!document.getElementById('graph-fullscreen').classList.contains('open')) {
-    document.body.style.overflow = '';
+
+function toggleDot() {
+  const box = document.getElementById('dot-box');
+  box.style.display = box.style.display === 'none' || !box.style.display ? 'block' : 'none';
+  updateDotBox();
+}
+
+function renderEliminationTrace(result) {
+  const container = document.getElementById('elimination-trace');
+  if (result.satisfiable) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
   }
+  var html = '<div class="elimination-card">';
+  html += '<h3>Why is this unsatisfiable?</h3>';
+  if (result.stats.pretableauStates === 0) {
+    html += '<div class="elim-summary">All formula expansions led to <strong>contradictions</strong>.</div>';
+  } else if (result.eliminations.length === 0) {
+    html += '<div class="elim-summary">All ' + result.stats.initialStates + ' states from the initial tableau were eliminated.</div>';
+  } else {
+    var e1Count = result.stats.eliminationsE1 || 0;
+    var e2Count = result.stats.eliminationsE2 || 0;
+    html += '<div class="elim-summary">All ' + result.stats.initialStates + ' states were eliminated:';
+    if (e1Count > 0) html += '<br><strong>' + e1Count + '</strong> by rule <strong>E1</strong> (diamond formula had no valid successor)';
+    if (e2Count > 0) html += '<br><strong>' + e2Count + '</strong> by rule <strong>E2</strong> (eventuality could not be realized)';
+    html += '</div><div class="elim-list">';
+    for (var i = 0; i < result.eliminations.length; i++) {
+      var e = result.eliminations[i];
+      html += '<div class="elim-item"><span class="elim-badge ' + e.rule.toLowerCase() + '">' + e.rule + '</span>';
+      html += '<span class="elim-id">' + e.stateId + '</span><div class="elim-reason">';
+      if (e.rule === 'E1') {
+        html += 'Diamond formula <span data-tex="' + escAttr(e.formulaLatex) + '"></span> had no surviving successor state';
+      } else {
+        html += 'Eventuality <span data-tex="' + escAttr(e.formulaLatex) + '"></span> could not be realized';
+      }
+      html += '<div class="elim-formulas">State contained: <span data-tex="' + escAttr(e.stateFormulasLatex) + '"></span></div></div></div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+  container.style.display = 'block';
+  container.querySelectorAll('[data-tex]').forEach(function(el) {
+    renderLatex(el, el.dataset.tex);
+  });
+}
+
+function escAttr(s) {
+  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function setExample(formula) {
@@ -1019,256 +1360,139 @@ function renderLatex(container, tex) {
   }
 }
 
-// Render all placeholders on load
+let aboutRendered = false;
+function openAboutModal() {
+  const modal = document.getElementById('about-modal');
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  if (!aboutRendered) {
+    modal.querySelectorAll('.katex-placeholder').forEach(function(el) {
+      if (el.dataset.tex) {
+        renderLatex(el, el.dataset.tex);
+        el.classList.remove('katex-placeholder');
+      }
+    });
+    aboutRendered = true;
+  }
+}
+function closeAboutModal() {
+  const modal = document.getElementById('about-modal');
+  modal.classList.remove('open');
+  if (!document.getElementById('graph-fullscreen').classList.contains('open')) {
+    document.body.style.overflow = '';
+  }
+}
+
+// Global Fullscreen helpers
+function openFullscreen() {
+  if (!lastResult) return;
+  const overlay = document.getElementById('graph-fullscreen');
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  renderGraph('graph-fs-viewport');
+}
+
+function closeFullscreen() {
+  const overlay = document.getElementById('graph-fullscreen');
+  overlay.classList.remove('open');
+  document.body.style.overflow = '';
+  // Redraw in small view
+  renderGraph('graph-view');
+}
+
+// Overwrite renderGraph to handle target
+renderGraph = async function(targetId) {
+  const container = document.getElementById(targetId || 'graph-view');
+  container.innerHTML = '<div class="graph-loading">Computing layout...</div>';
+  try {
+    const viz = await getViz();
+    const showElim = document.getElementById('opt-eliminated').checked;
+    const dot = generateDot(lastRawResult, currentPhase, { 
+      layoutOnly: true, 
+      showEliminated: showElim 
+    });
+    const json = await viz.renderJSON(dot);
+    drawD3Graph(json, container);
+    updateDotBox();
+  } catch (e) {
+    console.error(e);
+    container.innerHTML = '<div class="graph-loading">Error: ' + e.message + '</div>';
+  }
+}
+
+// Download handlers
+async function downloadSVG() {
+  const svg = document.querySelector('#graph-view svg');
+  if (!svg) return;
+  // clone and add background
+  const clone = svg.cloneNode(true);
+  clone.setAttribute('style', 'background: white');
+  const serializer = new XMLSerializer();
+  const svgStr = serializer.serializeToString(clone);
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tableau.svg';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function downloadPNG() {
+  const svg = document.querySelector('#graph-view svg');
+  if (!svg) return;
+  const serializer = new XMLSerializer();
+  const svgStr = serializer.serializeToString(svg);
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = function() {
+    const canvas = document.createElement('canvas');
+    canvas.width = svg.clientWidth * 2;
+    canvas.height = svg.clientHeight * 2;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(2, 2);
+    ctx.drawImage(img, 0, 0);
+    canvas.toBlob(function(pngBlob) {
+      const pngUrl = URL.createObjectURL(pngBlob);
+      const a = document.createElement('a');
+      a.href = pngUrl;
+      a.download = 'tableau.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(pngUrl);
+    }, 'image/png');
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
+// Initialize
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.katex-placeholder').forEach(function(el) {
     renderLatex(el, el.dataset.tex);
   });
-  // Focus formula input and track its value for clear button
   var input = document.getElementById('formula-input');
   input.focus();
   input.addEventListener('input', updateClearBtn);
 });
 
-// Enter key to solve
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'formula-input') {
     solve();
   }
+  if (e.key === 'Escape') {
+    if (document.getElementById('graph-fullscreen').classList.contains('open')) closeFullscreen();
+    else if (document.getElementById('about-modal').classList.contains('open')) closeAboutModal();
+  }
 });
 
-function showPhase(phase, btn) {
-  currentPhase = phase;
-  document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  updateGraphOptionsVisibility();
-  if (lastResult) {
-    displayPhase(lastResult, phase);
-    if (currentView === 'graph') {
-      renderGraph(lastResult, phase);
-    }
-  }
-}
-
-function displayPhase(result, phase) {
-  const container = document.getElementById('phase-content');
-  let html = '';
-
-  let states, edges;
-  if (phase === 'pretableau') {
-    states = result.pretableau.states;
-    edges = result.pretableau.solidEdges;
-    const prestates = result.pretableau.prestates;
-
-    html += '<div class="section-label">States (' + Object.keys(states).length + ')</div>';
-    html += '<div class="state-list">';
-    if (Object.keys(states).length === 0) {
-      html += '<div class="empty-notice">No states were created (all expansions were inconsistent)</div>';
-    }
-    for (const [id, s] of Object.entries(states)) {
-      html += '<div class="state-item' + (s.hasInput ? ' has-input' : '') + '">';
-      html += '<div class="state-id">' + id + '</div>';
-      html += '<div class="state-formulas" data-tex="' + escAttr(s.formulasLatex) + '"></div>';
-      html += '</div>';
-    }
-    html += '</div>';
-
-    html += '<div class="section-label">Prestates (' + Object.keys(prestates).length + ')</div>';
-    html += '<div class="state-list">';
-    for (const [id, s] of Object.entries(prestates)) {
-      html += '<div class="state-item" style="border-left-color:#999;border-style:dashed">';
-      html += '<div class="state-id">' + id + ' (prestate)</div>';
-      html += '<div class="state-formulas" data-tex="' + escAttr(s.formulasLatex) + '"></div>';
-      html += '</div>';
-    }
-    html += '</div>';
-  } else {
-    const tab = phase === 'initial' ? result.initialTableau : result.finalTableau;
-    states = tab.states;
-    edges = tab.edges;
-
-    html += '<div class="section-label">States (' + Object.keys(states).length + ')</div>';
-    html += '<div class="state-list">';
-    if (Object.keys(states).length === 0) {
-      html += '<div class="empty-notice">All states were eliminated &mdash; the formula is unsatisfiable</div>';
-    }
-    for (const [id, s] of Object.entries(states)) {
-      html += '<div class="state-item' + (s.hasInput ? ' has-input' : '') + '">';
-      html += '<div class="state-id">' + id + (s.hasInput ? ' (contains input formula)' : '') + '</div>';
-      html += '<div class="state-formulas" data-tex="' + escAttr(s.formulasLatex) + '"></div>';
-      html += '</div>';
-    }
-    html += '</div>';
-
-    html += '<div class="section-label">Edges (' + edges.length + ')</div>';
-    html += '<div class="state-list">';
-    if (edges.length === 0 && Object.keys(states).length > 0) {
-      html += '<div class="empty-notice">No transition edges</div>';
-    } else if (edges.length === 0) {
-      html += '<div class="empty-notice">No edges remain</div>';
-    }
-    for (const e of edges) {
-      html += '<div class="edge-item">';
-      html += '<span style="font-weight:600;color:var(--accent)">' + e.from + '</span>';
-      html += '<span class="edge-arrow">&xrarr;</span>';
-      html += '<span style="font-weight:600;color:var(--accent)">' + e.to + '</span>';
-      html += '<span style="color:var(--text-muted);font-size:0.85em">via</span>';
-      html += '<span class="edge-label" data-tex="' + escAttr(e.labelLatex) + '"></span>';
-      html += '</div>';
-    }
-    html += '</div>';
-  }
-
-  container.innerHTML = html;
-
-  // Render KaTeX in new elements
-  container.querySelectorAll('[data-tex]').forEach(function(el) {
-    renderLatex(el, el.dataset.tex);
-  });
-
-  // Update DOT
-  const dotBox = document.getElementById('dot-box');
-  dotBox.textContent = result.dots[getDotKey()] || '';
-}
-
-function escAttr(s) {
-  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function toggleDot() {
-  const box = document.getElementById('dot-box');
-  box.style.display = box.style.display === 'none' || !box.style.display ? 'block' : 'none';
-}
-
-function renderEliminationTrace(result) {
-  const container = document.getElementById('elimination-trace');
-
-  if (result.satisfiable) {
-    container.style.display = 'none';
-    container.innerHTML = '';
-    return;
-  }
-
-  var html = '<div class="elimination-card">';
-  html += '<h3>Why is this unsatisfiable?</h3>';
-
-  if (result.stats.pretableauStates === 0) {
-    // No states were ever created — patent inconsistency during expansion
-    html += '<div class="elim-summary">';
-    html += 'All formula expansions led to <strong>contradictions</strong>. ';
-    html += 'Every possible assignment of truth values to subformulas resulted in a set containing both ';
-    html += '<em>&phi;</em> and <em>&not;&phi;</em> for some formula &phi;, making the formula unsatisfiable ';
-    html += 'without even needing to build a tableau.';
-    html += '</div>';
-  } else if (result.eliminations.length === 0) {
-    // States existed in initial tableau but all ended up eliminated (edge case)
-    html += '<div class="elim-summary">';
-    html += 'All ' + result.stats.initialStates + ' states from the initial tableau were eliminated.';
-    html += '</div>';
-  } else {
-    var e1Count = result.stats.eliminationsE1 || 0;
-    var e2Count = result.stats.eliminationsE2 || 0;
-    html += '<div class="elim-summary">';
-    html += 'All ' + result.stats.initialStates + ' states from the initial tableau were eliminated during Phase 3:';
-    if (e1Count > 0) html += '<br><strong>' + e1Count + '</strong> by rule <strong>E1</strong> (diamond formula had no valid successor)';
-    if (e2Count > 0) html += '<br><strong>' + e2Count + '</strong> by rule <strong>E2</strong> (eventuality could not be realized)';
-    html += '</div>';
-
-    html += '<div class="elim-list">';
-    for (var i = 0; i < result.eliminations.length; i++) {
-      var e = result.eliminations[i];
-      html += '<div class="elim-item">';
-      html += '<span class="elim-badge ' + e.rule.toLowerCase() + '">' + e.rule + '</span>';
-      html += '<span class="elim-id">' + e.stateId + '</span>';
-      html += '<div class="elim-reason">';
-      if (e.rule === 'E1') {
-        html += 'Diamond formula <span data-tex="' + escAttr(e.formulaLatex) + '"></span> had no surviving successor state';
-      } else {
-        html += 'Eventuality <span data-tex="' + escAttr(e.formulaLatex) + '"></span> could not be realized (no finite witness path)';
-      }
-      html += '<div class="elim-formulas">State contained: <span data-tex="' + escAttr(e.stateFormulasLatex) + '"></span></div>';
-      html += '</div>';
-      html += '</div>';
-    }
-    html += '</div>';
-  }
-
-  html += '</div>';
-  container.innerHTML = html;
-  container.style.display = 'block';
-
-  // Render KaTeX
-  container.querySelectorAll('[data-tex]').forEach(function(el) {
-    renderLatex(el, el.dataset.tex);
-  });
-}
-
-function solve() {
-  const formula = document.getElementById('formula-input').value.trim();
-  if (!formula) return;
-
-  const restrictedCuts = document.getElementById('restricted-cuts').checked;
-  const errorEl = document.getElementById('parse-error');
-  errorEl.style.display = 'none';
-
-  try {
-    const result = solveFormula(formula, '', restrictedCuts);
-    lastResult = result;
-
-    const section = document.getElementById('result-section');
-    section.style.display = 'block';
-    var empty = document.getElementById('right-empty');
-    if (empty) empty.style.display = 'none';
-
-    const banner = document.getElementById('result-banner');
-    var pretableauNodes = result.stats.pretableauStates + result.stats.pretableauPrestates;
-    var statsHtml = '<div class="banner-stats">' +
-      '<div class="banner-stat" title="Phase 1 (Construction): Total nodes in the pretableau graph (' + result.stats.pretableauPrestates + ' prestates + ' + result.stats.pretableauStates + ' states). Prestates are intermediate expansion nodes; states are fully expanded possible worlds."><div class="num">' + pretableauNodes + '</div><div class="label">Pretableau</div></div>' +
-      '<div class="banner-stat" title="Phase 2 (Prestate Elimination): States remaining after removing prestates and rewiring edges into direct state-to-state transitions. This is the starting point for state elimination."><div class="num">' + result.stats.initialStates + '</div><div class="label">Initial</div></div>' +
-      '<div class="banner-stat" title="Phase 3 (State Elimination): States surviving after removing defective states via rules E1 (missing successor) and E2 (unrealized eventuality). The formula is satisfiable iff this is greater than 0."><div class="num">' + result.stats.finalStates + '</div><div class="label">Final</div></div>' +
-      '</div>';
-    if (result.satisfiable) {
-      banner.className = 'result-banner sat';
-      banner.innerHTML = '<span class="icon">&#10003;</span><div><div>Satisfiable</div>' +
-        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
-    } else {
-      banner.className = 'result-banner unsat';
-      banner.innerHTML = '<span class="icon">&#10007;</span><div><div>Unsatisfiable</div>' +
-        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
-    }
-    banner.querySelectorAll('[data-tex]').forEach(function(el) {
-      renderLatex(el, el.dataset.tex);
-    });
-
-    // Render elimination trace
-    renderEliminationTrace(result);
-
-    // Reset graph options
-    document.getElementById('opt-detailed').checked = false;
-    document.getElementById('opt-eliminated').checked = false;
-
-    // Reset to final tab
-    currentPhase = 'final';
-    document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector('.phase-tab[data-phase="final"]').classList.add('active');
-    updateGraphOptionsVisibility();
-    displayPhase(result, 'final');
-    if (currentView === 'graph') {
-      renderGraph(result, 'final');
-    }
-
-    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } catch(e) {
-    errorEl.textContent = e.message;
-    errorEl.style.display = 'block';
-  }
-}
-
-// Placeholder solver — replaced by bundled code
-function solveFormula(f, a, r) {
-  throw new Error('Solver not loaded. Build with: bun run src/build-html.ts');
-}
-<\/script>
+</script>
 </body>
 </html>`;
 }

@@ -4,33 +4,71 @@
  */
 
 import { parseFormula } from "../core/parser.ts";
-import { printFormula, printFormulaSet, printFormulaLatex, printFormulaSetLatex } from "../core/printer.ts";
+import { printFormula, printFormulaSet, printFormulaLatex, printFormulaSetLatex, printFormulaUnicode } from "../core/printer.ts";
 import { runTableau } from "../core/tableau.ts";
-import { toDot } from "../viz/text.ts";
-import type { TableauResult } from "../core/types.ts";
+import { toDot, type DotOptions } from "../viz/text.ts";
+import type { TableauResult, Formula } from "../core/types.ts";
+import { getAtomValuations, getAtoms, agentsInFormula } from "../core/formula.ts";
 
-// Expose solver to the global scope for the HTML page
+// Expose solver to the global scope
 (globalThis as any).solveFormula = function (
   formulaStr: string,
-  _agentsStr: string, // kept for backward compat with HTML caller
+  _agentsStr: string,
   restrictedCuts: boolean
 ) {
   const formula = parseFormula(formulaStr);
-  const result = runTableau(formula, restrictedCuts);
-  return serializeResult(result);
+  return runTableau(formula, restrictedCuts);
 };
 
-function serializeResult(result: TableauResult) {
+// Expose DOT generator
+(globalThis as any).generateDot = function (
+  result: TableauResult,
+  phase: "pretableau" | "initial" | "final",
+  options: DotOptions
+) {
+  // If formulaTitle is not provided, use the input formula
+  if (!options.formulaTitle) {
+    options.formulaTitle = printFormulaUnicode(result.inputFormula);
+  }
+  return toDot(result, phase, options);
+};
+
+// Expose serializer
+(globalThis as any).serializeResult = function (result: TableauResult) {
+  return serializeResultInternal(result);
+};
+
+function extractCoalition(f: Formula): string[] | null {
+  if (f.kind === "not" && f.sub.kind === "D") {
+    return [...f.sub.coalition];
+  }
+  return null;
+}
+
+function serializeResultInternal(result: TableauResult) {
   const inputKey = result.inputFormula;
   const inputLatex = printFormulaLatex(result.inputFormula);
+  const allAgents = [...agentsInFormula(result.inputFormula)].sort();
+  const allAtoms = [...getAtoms(result.inputFormula)].sort();
 
   function serializeStates(states: typeof result.pretableau.states) {
-    const out: Record<string, { formulas: string; formulasLatex: string; hasInput: boolean }> = {};
+    const out: Record<string, { 
+      formulas: string; 
+      formulasLatex: string; 
+      hasInput: boolean;
+      atoms: { name: string; value: boolean }[];
+      formulaListLatex: string[];
+    }> = {};
     for (const [id, state] of states) {
+      const valuations = getAtomValuations(state.formulas);
+      const atomList = Object.entries(valuations).map(([name, value]) => ({ name, value }));
+      
       out[id] = {
         formulas: printFormulaSet(state.formulas),
         formulasLatex: printFormulaSetLatex(state.formulas),
         hasInput: state.formulas.has(inputKey),
+        atoms: atomList,
+        formulaListLatex: state.formulas.toArray().map(printFormulaLatex),
       };
     }
     return out;
@@ -42,6 +80,7 @@ function serializeResult(result: TableauResult) {
       to: e.to,
       label: printFormula(e.label),
       labelLatex: printFormulaLatex(e.label),
+      coalition: extractCoalition(e.label),
     }));
   }
 
@@ -65,6 +104,8 @@ function serializeResult(result: TableauResult) {
   return {
     satisfiable: result.satisfiable,
     inputLatex,
+    agents: allAgents,
+    atoms: allAtoms,
     stats: {
       pretableauStates: result.pretableau.states.size,
       pretableauPrestates: result.pretableau.prestates.size,
@@ -88,17 +129,6 @@ function serializeResult(result: TableauResult) {
     finalTableau: {
       states: serializeStates(result.finalTableau.states),
       edges: serializeEdges(result.finalTableau.edges),
-    },
-    // DOT variants: compact and detailed, plus eliminated variants for final
-    dots: {
-      pretableau: toDot(result, "pretableau"),
-      initial: toDot(result, "initial"),
-      final: toDot(result, "final"),
-      pretableauDetailed: toDot(result, "pretableau", { detailedLabels: true }),
-      initialDetailed: toDot(result, "initial", { detailedLabels: true }),
-      finalDetailed: toDot(result, "final", { detailedLabels: true }),
-      finalEliminated: toDot(result, "final", { showEliminated: true }),
-      finalDetailedEliminated: toDot(result, "final", { detailedLabels: true, showEliminated: true }),
     },
   };
 }

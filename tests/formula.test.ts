@@ -165,6 +165,24 @@ describe("Parser", () => {
     }
   });
 
+  test("parse stacked K operators: ~KaKb p", () => {
+    const f = parseFormula("~KaKb p");
+    // Should parse as ¬(Ka(Kb p)) with agents a and b
+    expect(f.kind).toBe("not");
+    if (f.kind === "not") {
+      expect(f.sub.kind).toBe("D");
+      if (f.sub.kind === "D") {
+        expect(f.sub.coalition).toEqual(["a"]);
+        expect(f.sub.sub.kind).toBe("D");
+        if (f.sub.sub.kind === "D") {
+          expect(f.sub.sub.coalition).toEqual(["b"]);
+        }
+      }
+    }
+    const agents = [...agentsInFormula(f)].sort();
+    expect(agents).toEqual(["a", "b"]);
+  });
+
   test("roundtrip: parse then print", () => {
     const inputs = [
       "p",

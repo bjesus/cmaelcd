@@ -15,7 +15,7 @@
  */
 
 import { parseFormula } from "./core/parser.ts";
-import { printFormula } from "./core/printer.ts";
+import { printFormula, printFormulaUnicode } from "./core/printer.ts";
 import { runTableau } from "./core/tableau.ts";
 import { textSummary, textVerbose, toDot } from "./viz/text.ts";
 import { generateHTML } from "./viz/html.ts";
@@ -85,7 +85,7 @@ function solveAndPrint(formulaStr: string): void {
   }
 
   if (dotPhase) {
-    console.log(toDot(result, dotPhase));
+    console.log(toDot(result, dotPhase, { formulaTitle: printFormulaUnicode(formula) }));
     return;
   }
 

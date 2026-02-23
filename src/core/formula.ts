@@ -243,11 +243,52 @@ export function coalitionSubsets(coalition: Coalition): Coalition[] {
   for (let mask = 1; mask < (1 << n); mask++) {
     const subset: Agent[] = [];
     for (let i = 0; i < n; i++) {
-      if (mask & (1 << i)) {
+      if ((mask & (1 << i)) !== 0) {
         subset.push(coalition[i]!);
       }
     }
     result.push(subset.sort());
   }
+  return result;
+}
+
+/**
+ * Extract atom valuations from a formula set.
+ * Returns a map of atom name -> boolean (true if p is in set, false if ~p is in set).
+ * If both or neither are present, the atom is omitted (or ambiguous).
+ */
+export function getAtomValuations(fs: FormulaSet): Record<string, boolean> {
+  const result: Record<string, boolean> = {};
+  for (const f of fs) {
+    if (f.kind === "atom") {
+      result[f.name] = true;
+    } else if (f.kind === "not" && f.sub.kind === "atom") {
+      // Only set false if not already true (contradiction handling is separate)
+      if (result[f.sub.name] === undefined) {
+        result[f.sub.name] = false;
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Get all atom names from a formula.
+ */
+export function getAtoms(f: Formula): Set<string> {
+  const result = new Set<string>();
+  function collect(g: Formula): void {
+    if (g.kind === "atom") {
+      result.add(g.name);
+    } else if (g.kind === "not") {
+      collect(g.sub);
+    } else if (g.kind === "and") {
+      collect(g.left);
+      collect(g.right);
+    } else if (g.kind === "D" || g.kind === "C") {
+      collect(g.sub);
+    }
+  }
+  collect(f);
   return result;
 }
