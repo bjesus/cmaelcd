@@ -19,8 +19,7 @@ export function generateHTML(result?: TableauResult): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CMAEL(CD) Tableau Solver</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"><\/script>
-<script src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <style>
 :root {
   --bg: #f4f5f7;
@@ -193,6 +192,25 @@ input[type="text"]::placeholder { color: #bbb; }
 }
 
 /* Result banner */
+.result-banner.loading {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .result-banner {
   padding: 14px 18px; border-radius: var(--radius); margin-bottom: 16px;
   display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 0.95em;
@@ -678,20 +696,113 @@ input[type="text"]::placeholder { color: #bbb; }
 let lastResult = null;
 let currentPhase = 'final';
 let currentView = 'graph';
-let vizInstance = null;
-let vizLoading = false;
+// Worker communication state
+var renderCallbacks = {};
+var renderIdCounter = 0;
+var pendingSolve = null;
 
-// Compute the DOT key based on current phase and options
+// Set up the worker message handler. Called from DOMContentLoaded
+// so that the second script block (which creates window.__solverWorker)
+// has already executed.
+function initWorkerHandler() {
+  if (!window.__solverWorker) return;
+  window.__solverWorker.onmessage = function(e) {
+    var msg = e.data;
+    if (msg.type === 'status') {
+      var el = document.getElementById('solve-status');
+      if (el) el.textContent = msg.stage;
+    } else if (msg.type === 'result') {
+      showSolving(false);
+      lastResult = msg.result; // Store global result
+      displayResult(msg.result, pendingSolve);
+      pendingSolve = null;
+    } else if (msg.type === 'error') {
+      showSolving(false);
+      showSolveError(msg.message);
+      pendingSolve = null;
+    } else if (msg.type === 'svg') {
+      if (msg.id === 'initial-graph') {
+        injectGraphSvg(msg.svg);
+      } else if (renderCallbacks[msg.id]) {
+        renderCallbacks[msg.id](msg.svg, null);
+        delete renderCallbacks[msg.id];
+      }
+    } else if (msg.type === 'svg-error') {
+      if (renderCallbacks[msg.id]) {
+        renderCallbacks[msg.id](null, msg.message);
+        delete renderCallbacks[msg.id];
+      }
+    }
+  };
+}
+
+function requestSvg(dot) {
+  return new Promise(function(resolve, reject) {
+    var id = ++renderIdCounter;
+    renderCallbacks[id] = function(svg, err) {
+      if (err) reject(new Error(err));
+      else resolve(svg);
+    };
+    window.__solverWorker.postMessage({type:'render', dot:dot, id:id});
+  });
+}
+
+function showSolving(show) {
+  var section = document.getElementById('result-section');
+  var empty = document.getElementById('right-empty');
+  var banner = document.getElementById('result-banner');
+  var btn = document.getElementById('solve-btn');
+  
+  if (show) {
+    section.style.display = 'block';
+    if (empty) empty.style.display = 'none';
+    banner.className = 'result-banner loading';
+    banner.innerHTML = '<span class="spinner"></span><div><div id="solve-status">Starting solver...</div></div>';
+    if (btn) btn.disabled = true;
+    
+    // Clear previous results while loading
+    document.getElementById('phase-content').innerHTML = '';
+    document.getElementById('graph-view').innerHTML = '<div class="graph-loading">Waiting for results...</div>';
+     document.getElementById('elimination-trace').innerHTML = '';
+  } else {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function showSolveError(msg) {
+  var errorEl = document.getElementById('parse-error');
+  errorEl.textContent = msg;
+  errorEl.style.display = 'block';
+  var section = document.getElementById('result-section');
+  section.style.display = 'none';
+  var btn = document.getElementById('solve-btn');
+  if (btn) btn.disabled = false;
+}
+
 function getDotKey() {
-  const detailed = document.getElementById('opt-detailed').checked;
-  const showElim = document.getElementById('opt-eliminated').checked;
   if (currentPhase === 'pretableau') return detailed ? 'pretableauDetailed' : 'pretableau';
   if (currentPhase === 'initial') return detailed ? 'initialDetailed' : 'initial';
-  // final phase
-  if (detailed && showElim) return 'finalDetailedEliminated';
-  if (detailed) return 'finalDetailed';
-  if (showElim) return 'finalEliminated';
-  return 'final';
+  // final phase has more variants
+  var key = 'final';
+  if (detailed) key += 'Detailed';
+  if (eliminated) key += 'Eliminated';
+  return key;
+}
+
+function updateGraphOptionsVisibility() {
+  var detailedLabel = document.getElementById('opt-detailed').parentElement;
+  var showElimLabel = document.getElementById('opt-eliminated').parentElement;
+  
+  // Detailed labels available in all phases
+  // Show Eliminated only available in final phase
+  // But check if we have results to know if eliminations exist
+  if (currentView === 'graph' && lastResult) {
+    renderGraph(lastResult, currentPhase);
+  }
+  
+  // Only show eliminated option if there actually were eliminations
+  var hasElims = lastResult && lastResult.eliminations && lastResult.eliminations.length > 0;
+  showElimLabel.style.display = (currentPhase === 'final' && hasElims) ? '' : 'none';
 }
 
 function onGraphOptionChange() {
@@ -744,7 +855,7 @@ function setView(view) {
   }
 }
 
-async function renderGraph(result, phase) {
+function renderGraph(result, phase) {
   const container = document.getElementById('graph-view');
   const dotKey = getDotKey();
   const dot = result.dots[dotKey];
@@ -752,15 +863,30 @@ async function renderGraph(result, phase) {
     container.innerHTML = '<div class="graph-loading">No graph data available</div>';
     return;
   }
+  
+  // If we already have the SVG for this exact dot string cached (TODO?), use it.
+  // For now, just request render.
+  
   container.innerHTML = '<div class="graph-loading">Rendering graph...</div><div class="graph-hint">Click to expand</div>';
-  try {
-    const viz = await getViz();
-    const svg = viz.renderSVGElement(dot);
-    container.innerHTML = '<div class="graph-hint">Click to expand</div>';
-    container.insertBefore(svg, container.firstChild);
-  } catch(e) {
+  requestSvg(dot).then(function(svg) {
+    injectGraphSvg(svg);
+  }).catch(function(e) {
     container.innerHTML = '<div class="graph-loading">Error rendering graph: ' + e.message + '</div>';
-  }
+  });
+}
+
+function injectGraphSvg(svgStr) {
+  var container = document.getElementById('graph-view');
+  if (!container) return;
+  
+  container.innerHTML = '<div class="graph-hint">Click to expand</div>';
+  // Check if svgStr is a string or an object?
+  // worker sends string via renderString, but in browser context viz.renderSVGElement returns Element.
+  // worker Viz.renderString returns string. So svgStr is a string.
+  container.insertAdjacentHTML('beforeend', svgStr);
+  
+  // The inserted SVG needs to be styled/sized if needed?
+  // Previous code used container.insertBefore(svg, container.firstChild).
 }
 
 function getDownloadFilename(ext) {
@@ -778,11 +904,19 @@ async function getGraphSvgString(forExport) {
     var title = (formula ? formula + '  —  ' : '') + (phaseNames[currentPhase] || '');
     dot = dot.replace('digraph tableau {', 'digraph tableau {\\n  label="' + escDotStr(title) + '"; labelloc=t; fontsize=16; fontname="Helvetica";');
   }
-  var viz = await getViz();
-  var svg = viz.renderSVGElement(dot);
-  if (forExport) svg.setAttribute('style', 'background: white');
-  var serializer = new XMLSerializer();
-  return serializer.serializeToString(svg);
+  
+  return requestSvg(dot).then(function(svgStr) {
+    if (forExport) {
+      // Add background: white to style attribute
+      // svgStr is a string, we need to inject the style attribute
+      if (svgStr.indexOf('style="') > -1) {
+        svgStr = svgStr.replace('style="', 'style="background: white; ');
+      } else {
+        svgStr = svgStr.replace('<svg ', '<svg style="background: white" ');
+      }
+    }
+    return svgStr;
+  });
 }
 
 function escDotStr(s) {
@@ -855,12 +989,17 @@ function openFullscreen() {
 
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
+  viewport.innerHTML = '<div class="graph-loading">Rendering graph...</div>';
 
   // Render SVG into fullscreen viewport
-  getViz().then(function(viz) {
-    const svg = viz.renderSVGElement(dot);
+  requestSvg(dot).then(function(svgStr) {
     viewport.innerHTML = '';
-    viewport.appendChild(svg);
+    // Inject via innerHTML or insertAdjacentHTML
+    viewport.insertAdjacentHTML('beforeend', svgStr);
+    
+    // Now get the SVG element from DOM
+    const svg = viewport.querySelector('svg');
+    if (!svg) return;
 
     // Reset transform
     fsScale = 1;
@@ -868,25 +1007,34 @@ function openFullscreen() {
     fsPanY = 0;
 
     // Center the SVG
+    // Note: clientWidth/Height might be 0 if display:none, but overlay is 'open' so it should be visible
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
-    const sw = svg.viewBox.baseVal.width || svg.getBBox().width;
-    const sh = svg.viewBox.baseVal.height || svg.getBBox().height;
+    // For SVG string injected, we need to wait for layout? No, sync DOM update.
+    // SVG viewbox attributes are available.
+    const viewBox = svg.viewBox.baseVal;
+    const sw = viewBox ? viewBox.width : (svg.getAttribute('width') ? parseFloat(svg.getAttribute('width')) : 100);
+    const sh = viewBox ? viewBox.height : (svg.getAttribute('height') ? parseFloat(svg.getAttribute('height')) : 100);
 
     // Remove fixed width/height so we control via transform
     svg.removeAttribute('width');
     svg.removeAttribute('height');
-    svg.style.width = sw + 'px';
-    svg.style.height = sh + 'px';
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.overflow = 'visible';
 
-    // Fit to viewport
-    const fitScale = Math.min(vw / sw, vh / sh, 1.5) * 0.9;
-    fsScale = fitScale;
+    // Initial scale to fit
+    const scaleX = vw / sw;
+    const scaleY = vh / sh;
+    fsScale = Math.min(scaleX, scaleY) * 0.9;
+    
+    // Initial center
     fsPanX = (vw - sw * fsScale) / 2;
     fsPanY = (vh - sh * fsScale) / 2;
-    applyFsTransform(svg);
-  }).catch(function() {
-    viewport.innerHTML = '<div style="padding:40px;color:#999">Failed to render graph</div>';
+
+    updateFsTransform();
+  }).catch(function(e) {
+    viewport.innerHTML = '<div class="graph-loading">Error: ' + e.message + '</div>';
   });
 }
 
@@ -895,6 +1043,10 @@ function closeFullscreen() {
   overlay.classList.remove('open');
   document.body.style.overflow = '';
   document.getElementById('graph-fs-viewport').innerHTML = '';
+}
+
+function updateFsTransform() {
+  applyFsTransform(getFsSvg());
 }
 
 function applyFsTransform(svg) {
@@ -1045,6 +1197,7 @@ function renderLatex(container, tex) {
 
 // Render all placeholders on load; check URL for initial formula
 document.addEventListener('DOMContentLoaded', function() {
+  initWorkerHandler();
   document.querySelectorAll('.katex-placeholder').forEach(function(el) {
     renderLatex(el, el.dataset.tex);
   });
@@ -1263,6 +1416,55 @@ function renderEliminationTrace(result) {
   });
 }
 
+function displayResult(result, solveState) {
+  const section = document.getElementById('result-section');
+  section.style.display = 'block';
+  var empty = document.getElementById('right-empty');
+  if (empty) empty.style.display = 'none';
+
+  const banner = document.getElementById('result-banner');
+  var pretableauNodes = result.stats.pretableauStates + result.stats.pretableauPrestates;
+  var statsHtml = '<div class="banner-stats">' +
+    '<div class="banner-stat" title="Phase 1 (Construction): Total nodes in the pretableau graph (' + result.stats.pretableauPrestates + ' prestates + ' + result.stats.pretableauStates + ' states). Prestates are intermediate expansion nodes; states are fully expanded possible worlds."><div class="num">' + pretableauNodes + '</div><div class="label">Pretableau</div></div>' +
+    '<div class="banner-stat" title="Phase 2 (Prestate Elimination): States remaining after removing prestates and rewiring edges into direct state-to-state transitions. This is the starting point for state elimination."><div class="num">' + result.stats.initialStates + '</div><div class="label">Initial</div></div>' +
+    '<div class="banner-stat" title="Phase 3 (State Elimination): States surviving after removing defective states via rules E1 (missing successor) and E2 (unrealized eventuality). The formula is satisfiable iff this is greater than 0."><div class="num">' + result.stats.finalStates + '</div><div class="label">Final</div></div>' +
+    '</div>';
+  if (result.satisfiable) {
+    banner.className = 'result-banner sat';
+    banner.innerHTML = '<span class="icon">&#10003;</span><div><div>Satisfiable</div>' +
+      '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
+  } else {
+    banner.className = 'result-banner unsat';
+    banner.innerHTML = '<span class="icon">&#10007;</span><div><div>Unsatisfiable</div>' +
+      '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
+  }
+  banner.querySelectorAll('[data-tex]').forEach(function(el) {
+    renderLatex(el, el.dataset.tex);
+  });
+
+  // Render elimination trace
+  renderEliminationTrace(result);
+
+  // Reset graph options
+  document.getElementById('opt-detailed').checked = false;
+  document.getElementById('opt-eliminated').checked = false;
+
+  // Reset to final tab
+  currentPhase = 'final';
+  document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.phase-tab[data-phase="final"]').classList.add('active');
+  updateGraphOptionsVisibility();
+  displayPhase(result, 'final');
+  // Graph rendering is handled separately via 'svg' message
+  
+  // Update browser URL and history
+  if (solveState && !solveState.fromHistory) {
+    var stateObj = { formula: solveState.formula, rc: solveState.restrictedCuts };
+    history.pushState(stateObj, '', buildUrl(solveState.formula, solveState.restrictedCuts));
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
 function solve(fromHistory) {
   const formula = document.getElementById('formula-input').value.trim();
   if (!formula) return;
@@ -1271,64 +1473,16 @@ function solve(fromHistory) {
   const errorEl = document.getElementById('parse-error');
   errorEl.style.display = 'none';
 
-  try {
-    const result = solveFormula(formula, '', restrictedCuts);
-    lastResult = result;
-
-    const section = document.getElementById('result-section');
-    section.style.display = 'block';
-    var empty = document.getElementById('right-empty');
-    if (empty) empty.style.display = 'none';
-
-    const banner = document.getElementById('result-banner');
-    var pretableauNodes = result.stats.pretableauStates + result.stats.pretableauPrestates;
-    var statsHtml = '<div class="banner-stats">' +
-      '<div class="banner-stat" title="Phase 1 (Construction): Total nodes in the pretableau graph (' + result.stats.pretableauPrestates + ' prestates + ' + result.stats.pretableauStates + ' states). Prestates are intermediate expansion nodes; states are fully expanded possible worlds."><div class="num">' + pretableauNodes + '</div><div class="label">Pretableau</div></div>' +
-      '<div class="banner-stat" title="Phase 2 (Prestate Elimination): States remaining after removing prestates and rewiring edges into direct state-to-state transitions. This is the starting point for state elimination."><div class="num">' + result.stats.initialStates + '</div><div class="label">Initial</div></div>' +
-      '<div class="banner-stat" title="Phase 3 (State Elimination): States surviving after removing defective states via rules E1 (missing successor) and E2 (unrealized eventuality). The formula is satisfiable iff this is greater than 0."><div class="num">' + result.stats.finalStates + '</div><div class="label">Final</div></div>' +
-      '</div>';
-    if (result.satisfiable) {
-      banner.className = 'result-banner sat';
-      banner.innerHTML = '<span class="icon">&#10003;</span><div><div>Satisfiable</div>' +
-        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
-    } else {
-      banner.className = 'result-banner unsat';
-      banner.innerHTML = '<span class="icon">&#10007;</span><div><div>Unsatisfiable</div>' +
-        '<div class="result-formula" data-tex="' + escAttr(result.inputLatex) + '"></div></div>' + statsHtml;
-    }
-    banner.querySelectorAll('[data-tex]').forEach(function(el) {
-      renderLatex(el, el.dataset.tex);
+  showSolving(true);
+  pendingSolve = { formula: formula, restrictedCuts: restrictedCuts, fromHistory: fromHistory };
+  
+  if (window.__solverWorker) {
+    window.__solverWorker.postMessage({
+      type: 'solve', formula: formula, restrictedCuts: restrictedCuts
     });
-
-    // Render elimination trace
-    renderEliminationTrace(result);
-
-    // Reset graph options
-    document.getElementById('opt-detailed').checked = false;
-    document.getElementById('opt-eliminated').checked = false;
-
-    // Reset to final tab
-    currentPhase = 'final';
-    document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
-    document.querySelector('.phase-tab[data-phase="final"]').classList.add('active');
-    updateGraphOptionsVisibility();
-    displayPhase(result, 'final');
-    if (currentView === 'graph') {
-      renderGraph(result, 'final');
-    }
-
-    // Update browser URL and history
-    if (!fromHistory) {
-      var stateObj = { formula: formula, rc: restrictedCuts };
-      history.pushState(stateObj, '', buildUrl(formula, restrictedCuts));
-    }
-
-    if (!fromHistory) {
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  } catch(e) {
-    errorEl.textContent = e.message;
-    errorEl.style.display = 'block';
+  } else {
+    // Fallback if worker failed to init (shouldn't happen)
+    showSolveError("Solver worker not initialized. Reload page.");
   }
 }
 

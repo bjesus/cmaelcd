@@ -1,6 +1,6 @@
 /**
  * Browser entry point for the CMAEL(CD) Tableau Solver.
- * Exports the solver function to the global scope for the HTML page to use.
+ * Runs as a Web Worker to keep the UI responsive.
  */
 
 import { parseFormula } from "../core/parser.ts";
@@ -9,15 +9,57 @@ import { runTableau } from "../core/tableau.ts";
 import { toDot } from "../viz/text.ts";
 import type { TableauResult } from "../core/types.ts";
 
-// Expose solver to the global scope for the HTML page
-(globalThis as any).solveFormula = function (
-  formulaStr: string,
-  _agentsStr: string, // kept for backward compat with HTML caller
-  restrictedCuts: boolean
-) {
-  const formula = parseFormula(formulaStr);
-  const result = runTableau(formula, restrictedCuts);
-  return serializeResult(result);
+// Helper to access worker global scope safely
+const ctx: any = self;
+
+// Load Viz.js (Synchronous import for classic workers)
+// This adds 'Viz' to the global scope
+importScripts('https://cdn.jsdelivr.net/npm/@viz-js/viz@3.11.0/lib/viz-standalone.js');
+
+let vizPromise: Promise<any> | null = null;
+function getViz() {
+  if (!vizPromise) {
+    vizPromise = ctx.Viz.instance();
+  }
+  return vizPromise;
+}
+
+ctx.onmessage = async (e: MessageEvent) => {
+  const msg = e.data;
+
+  if (msg.type === 'solve') {
+    try {
+      ctx.postMessage({ type: 'status', stage: 'Parsing formula...' });
+      const formula = parseFormula(msg.formula);
+
+      const result = runTableau(formula, msg.restrictedCuts, (stage) => {
+        ctx.postMessage({ type: 'status', stage });
+      });
+
+      ctx.postMessage({ type: 'status', stage: 'Preparing results...' });
+      const serialized = serializeResult(result);
+
+      ctx.postMessage({ type: 'result', result: serialized });
+
+      // Pre-render the final graph (default view)
+      ctx.postMessage({ type: 'status', stage: 'Rendering graph...' });
+      const viz = await getViz();
+      const dot = serialized.dots.final;
+      const svg = await viz.renderString(dot, { format: 'svg' });
+      ctx.postMessage({ type: 'svg', svg, id: 'initial-graph' });
+
+    } catch (err: any) {
+      ctx.postMessage({ type: 'error', message: err.message });
+    }
+  } else if (msg.type === 'render') {
+    try {
+      const viz = await getViz();
+      const svg = await viz.renderString(msg.dot, { format: 'svg' });
+      ctx.postMessage({ type: 'svg', svg, id: msg.id });
+    } catch (err: any) {
+      ctx.postMessage({ type: 'svg-error', message: err.message, id: msg.id });
+    }
+  }
 };
 
 function serializeResult(result: TableauResult) {

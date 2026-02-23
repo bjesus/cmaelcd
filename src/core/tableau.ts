@@ -64,20 +64,25 @@ function resetNodeCounter(): void {
  */
 export function runTableau(
   theta: Formula,
-  useRestrictedCuts: boolean = true
+  useRestrictedCuts: boolean = true,
+  onProgress?: (stage: string) => void
 ): TableauResult {
   resetNodeCounter();
 
   // Phase 1: Construction
+  if (onProgress) onProgress("Phase 1: Construction");
   const pretableau = constructionPhase(theta, useRestrictedCuts);
 
   // Phase 2: Prestate elimination
+  if (onProgress) onProgress("Phase 2: Prestate Elimination");
   const initialTableau = prestateEliminationPhase(pretableau);
 
   // Phase 3: State elimination
+  if (onProgress) onProgress("Phase 3: State Elimination");
   const { tableau: finalTableau, eliminations } = stateEliminationPhase(initialTableau);
 
   // Check if open: does any surviving state contain θ?
+  if (onProgress) onProgress("Checking Satisfiability");
   let satisfiable = false;
   for (const [, state] of finalTableau.states) {
     if (state.formulas.has(theta)) {

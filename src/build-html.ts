@@ -24,12 +24,14 @@ const bundleCode = await bundleResult.outputs[0]!.text();
 // Generate the base HTML
 let html = generateHTML();
 
-// Inject the bundled solver code before the closing </script> tag
-// This replaces the placeholder solveFormula function
+// Inject the bundled solver code as a Blob-based Web Worker
+// This avoids blocking the main thread during solving and graph rendering
 const solverScript = `
 <script>
-// Bundled CMAEL(CD) solver
-${bundleCode}
+// Bundled CMAEL(CD) solver worker
+var __workerCode = ${JSON.stringify(bundleCode)};
+var __workerBlob = new Blob([__workerCode], {type: 'application/javascript'});
+window.__solverWorker = new Worker(URL.createObjectURL(__workerBlob));
 </script>
 `;
 
