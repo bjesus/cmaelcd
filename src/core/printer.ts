@@ -103,38 +103,99 @@ export function printFormulaSetCompact(fs: FormulaSet): string {
 // ============================================================
 
 /**
+ * Map nesting level to LaTeX sizing commands for parentheses.
+ * Level 0 = innermost (plain parens), increasing = bigger.
+ */
+const PAREN_SIZES = ["", "\\big", "\\Big", "\\bigg", "\\Bigg"];
+
+function sizedOpen(level: number): string {
+  if (level <= 0) return "(";
+  const cmd = PAREN_SIZES[Math.min(level, PAREN_SIZES.length - 1)];
+  return `${cmd}(`;
+}
+
+function sizedClose(level: number): string {
+  if (level <= 0) return ")";
+  const cmd = PAREN_SIZES[Math.min(level, PAREN_SIZES.length - 1)];
+  return `${cmd})`;
+}
+
+/** Count the maximum parenthesis nesting depth of a formula. */
+function maxParenNesting(f: Formula): number {
+  switch (f.kind) {
+    case "atom":
+      return 0;
+    case "not":
+      if (f.sub.kind === "and" || f.sub.kind === "not") {
+        return 1 + maxParenNesting(f.sub);
+      }
+      return maxParenNesting(f.sub);
+    case "and":
+      return 1 + Math.max(maxParenNesting(f.left), maxParenNesting(f.right));
+    case "D":
+    case "C": {
+      const sub = f.sub;
+      if (sub.kind === "and" || (sub.kind === "not" && sub.sub.kind === "and")) {
+        return 1 + maxParenNesting(sub);
+      }
+      return maxParenNesting(sub);
+    }
+  }
+}
+
+/**
  * Print a formula as a LaTeX string suitable for KaTeX rendering.
+ * Uses explicit sizing commands (\big, \Big, etc.) so nested
+ * parentheses are progressively larger.
  */
 export function printFormulaLatex(f: Formula): string {
+  const total = maxParenNesting(f);
+  return printLatex(f, total, 0);
+}
+
+/**
+ * Recursive LaTeX printer.
+ * @param f     - formula to print
+ * @param total - total paren nesting depth of the whole formula
+ * @param depth - current paren depth (0 = outermost)
+ *
+ * Size level for a paren at depth d = total - d - 1
+ * (so outermost parens are biggest, innermost are plain).
+ */
+function printLatex(f: Formula, total: number, depth: number): string {
   switch (f.kind) {
     case "atom":
       return f.name;
 
     case "not":
       if (f.sub.kind === "and" || f.sub.kind === "not") {
-        return `\\neg(${printFormulaLatex(f.sub)})`;
+        const level = total - depth - 1;
+        return `\\neg${sizedOpen(level)}${printLatex(f.sub, total, depth + 1)}${sizedClose(level)}`;
       }
-      return `\\neg ${printFormulaLatex(f.sub)}`;
+      return `\\neg ${printLatex(f.sub, total, depth)}`;
 
-    case "and":
-      return `(${printFormulaLatex(f.left)} \\wedge ${printFormulaLatex(f.right)})`;
+    case "and": {
+      const level = total - depth - 1;
+      return `${sizedOpen(level)}${printLatex(f.left, total, depth + 1)} \\wedge ${printLatex(f.right, total, depth + 1)}${sizedClose(level)}`;
+    }
 
     case "D":
       if (f.coalition.length === 1) {
-        return `\\mathbf{K}_{${f.coalition[0]}} ${printFormulaLatexWrapped(f.sub)}`;
+        return `\\mathbf{K}_{${f.coalition[0]}} ${printLatexWrapped(f.sub, total, depth)}`;
       }
-      return `\\mathbf{D}_{\\{${f.coalition.join(",")}\\}} ${printFormulaLatexWrapped(f.sub)}`;
+      return `\\mathbf{D}_{\\{${f.coalition.join(",")}\\}} ${printLatexWrapped(f.sub, total, depth)}`;
 
     case "C":
-      return `\\mathbf{C}_{\\{${f.coalition.join(",")}\\}} ${printFormulaLatexWrapped(f.sub)}`;
+      return `\\mathbf{C}_{\\{${f.coalition.join(",")}\\}} ${printLatexWrapped(f.sub, total, depth)}`;
   }
 }
 
-function printFormulaLatexWrapped(f: Formula): string {
+function printLatexWrapped(f: Formula, total: number, depth: number): string {
   if (f.kind === "and" || (f.kind === "not" && f.sub.kind === "and")) {
-    return `(${printFormulaLatex(f)})`;
+    const level = total - depth - 1;
+    return `${sizedOpen(level)}${printLatex(f, total, depth + 1)}${sizedClose(level)}`;
   }
-  return printFormulaLatex(f);
+  return printLatex(f, total, depth);
 }
 
 /**

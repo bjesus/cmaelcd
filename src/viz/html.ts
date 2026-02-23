@@ -767,20 +767,30 @@ function getDownloadFilename(ext) {
   return 'tableau-' + currentPhase + (document.getElementById('opt-detailed').checked ? '-detailed' : '') + '.' + ext;
 }
 
-async function getGraphSvgString() {
+async function getGraphSvgString(forExport) {
   if (!lastResult) return null;
   var dot = lastResult.dots[getDotKey()];
   if (!dot) return null;
+  // For export, inject the formula as a graph title
+  if (forExport) {
+    var formula = document.getElementById('formula-input').value.trim();
+    var phaseNames = { final: 'Final Tableau', initial: 'Initial Tableau', pretableau: 'Pretableau' };
+    var title = (formula ? formula + '  —  ' : '') + (phaseNames[currentPhase] || '');
+    dot = dot.replace('digraph tableau {', 'digraph tableau {\\n  label="' + escDotStr(title) + '"; labelloc=t; fontsize=16; fontname="Helvetica";');
+  }
   var viz = await getViz();
   var svg = viz.renderSVGElement(dot);
-  // Ensure white background for export
-  svg.setAttribute('style', 'background: white');
+  if (forExport) svg.setAttribute('style', 'background: white');
   var serializer = new XMLSerializer();
   return serializer.serializeToString(svg);
 }
 
+function escDotStr(s) {
+  return s.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
+}
+
 async function downloadSVG() {
-  var svgStr = await getGraphSvgString();
+  var svgStr = await getGraphSvgString(true);
   if (!svgStr) return;
   var blob = new Blob([svgStr], { type: 'image/svg+xml' });
   var url = URL.createObjectURL(blob);
@@ -794,7 +804,7 @@ async function downloadSVG() {
 }
 
 async function downloadPNG() {
-  var svgStr = await getGraphSvgString();
+  var svgStr = await getGraphSvgString(true);
   if (!svgStr) return;
   var blob = new Blob([svgStr], { type: 'image/svg+xml' });
   var url = URL.createObjectURL(blob);

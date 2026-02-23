@@ -219,7 +219,7 @@ class Parser {
   }
 
   private isAgentChar(ch: string): boolean {
-    return /[a-z0-9_]/i.test(ch);
+    return /[a-z0-9_]/.test(ch);
   }
 
   private peek(): string | undefined {

@@ -84,6 +84,32 @@ describe("Parser", () => {
     }
   });
 
+  test("parse nested knowledge KaKb without space", () => {
+    const f = parseFormula("KaKb p");
+    // Should parse as Ka(Kb p), not K(aKb) p
+    expect(f.kind).toBe("D");
+    if (f.kind === "D") {
+      expect(f.coalition).toEqual(["a"]);
+      expect(f.sub.kind).toBe("D");
+      if (f.sub.kind === "D") {
+        expect(f.sub.coalition).toEqual(["b"]);
+        expect(f.sub.sub.kind).toBe("atom");
+      }
+    }
+  });
+
+  test("parse ~KaKb p correctly", () => {
+    const f = parseFormula("~KaKb p");
+    expect(f.kind).toBe("not");
+    if (f.kind === "not") {
+      expect(f.sub.kind).toBe("D");
+      if (f.sub.kind === "D") {
+        expect(f.sub.coalition).toEqual(["a"]);
+        expect(f.sub.sub.kind).toBe("D");
+      }
+    }
+  });
+
   test("parse distributed knowledge D{a,b}", () => {
     const f = parseFormula("D{a,b} p");
     expect(f.kind).toBe("D");
