@@ -396,7 +396,17 @@ input[type="text"]::placeholder { color: #bbb; }
   color: var(--accent); background: var(--accent-light); border: 1px solid var(--border);
   border-radius: 4px; cursor: pointer; transition: all 0.15s;
 }
-.graph-dl-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+.graph-dl-btn:hover:not(:disabled) { background: var(--accent); color: white; border-color: var(--accent); }
+.graph-dl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.spinner-sm {
+  display: inline-block; width: 10px; height: 10px;
+  border: 1.5px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+}
+
+/* Hide graph title text inside the inline graph view (visible in fullscreen/export) */
+#graph-view .graph > text { display: none; }
 
 /* Elimination trace */
 .elimination-card {
@@ -563,8 +573,8 @@ input[type="text"]::placeholder { color: #bbb; }
             <label><input type="checkbox" id="opt-detailed" onchange="onGraphOptionChange()"> Detailed labels</label>
             <label id="opt-eliminated-label" style="display:none"><input type="checkbox" id="opt-eliminated" onchange="onGraphOptionChange()"> Show eliminated states</label>
             <span class="download-btns">
-              <button class="graph-dl-btn" onclick="downloadSVG()">SVG</button>
-              <button class="graph-dl-btn" onclick="downloadPNG()">PNG</button>
+              <button class="graph-dl-btn" id="dl-svg-btn" onclick="downloadSVG()">SVG</button>
+              <button class="graph-dl-btn" id="dl-png-btn" onclick="downloadPNG()">PNG</button>
             </span>
           </div>
           <div id="graph-view" class="graph-container" onclick="openFullscreen()">
@@ -721,9 +731,7 @@ function initWorkerHandler() {
       showSolveError(msg.message);
       pendingSolve = null;
     } else if (msg.type === 'svg') {
-      if (msg.id === 'initial-graph') {
-        injectGraphSvg(msg.svg);
-      } else if (renderCallbacks[msg.id]) {
+      if (renderCallbacks[msg.id]) {
         renderCallbacks[msg.id](msg.svg, null);
         delete renderCallbacks[msg.id];
       }
@@ -780,6 +788,8 @@ function showSolveError(msg) {
 }
 
 function getDotKey() {
+  var detailed = document.getElementById('opt-detailed').checked;
+  var eliminated = document.getElementById('opt-eliminated').checked;
   if (currentPhase === 'pretableau') return detailed ? 'pretableauDetailed' : 'pretableau';
   if (currentPhase === 'initial') return detailed ? 'initialDetailed' : 'initial';
   // final phase has more variants
@@ -787,22 +797,6 @@ function getDotKey() {
   if (detailed) key += 'Detailed';
   if (eliminated) key += 'Eliminated';
   return key;
-}
-
-function updateGraphOptionsVisibility() {
-  var detailedLabel = document.getElementById('opt-detailed').parentElement;
-  var showElimLabel = document.getElementById('opt-eliminated').parentElement;
-  
-  // Detailed labels available in all phases
-  // Show Eliminated only available in final phase
-  // But check if we have results to know if eliminations exist
-  if (currentView === 'graph' && lastResult) {
-    renderGraph(lastResult, currentPhase);
-  }
-  
-  // Only show eliminated option if there actually were eliminations
-  var hasElims = lastResult && lastResult.eliminations && lastResult.eliminations.length > 0;
-  showElimLabel.style.display = (currentPhase === 'final' && hasElims) ? '' : 'none';
 }
 
 function onGraphOptionChange() {
@@ -824,25 +818,6 @@ function updateGraphOptionsVisibility() {
   showElimLabel.style.display = (currentPhase === 'final' && hasElims) ? '' : 'none';
 }
 
-async function getViz() {
-  if (vizInstance) return vizInstance;
-  if (typeof Viz === 'undefined') {
-    throw new Error('Viz.js not loaded');
-  }
-  if (vizLoading) {
-    // Wait for existing load
-    while (vizLoading) await new Promise(r => setTimeout(r, 50));
-    return vizInstance;
-  }
-  vizLoading = true;
-  try {
-    vizInstance = await Viz.instance();
-    return vizInstance;
-  } finally {
-    vizLoading = false;
-  }
-}
-
 function setView(view) {
   currentView = view;
   document.getElementById('view-list-btn').classList.toggle('active', view === 'list');
@@ -855,23 +830,40 @@ function setView(view) {
   }
 }
 
+var graphPhaseNames = { final: 'Final Tableau', initial: 'Initial Tableau', pretableau: 'Pretableau' };
+
+function addDotTitle(dot, formula, phase) {
+  var title = (formula ? formula + '  \\u2014  ' : '') + (graphPhaseNames[phase] || '');
+  return dot.replace('digraph tableau {', 'digraph tableau {\\n  label="' + escDotStr(title) + '"; labelloc=t; fontsize=16; fontname="Helvetica";');
+}
+
+// Track which dotKey is currently rendered in graph-view
+var renderedDotKey = null;
+
 function renderGraph(result, phase) {
   const container = document.getElementById('graph-view');
   const dotKey = getDotKey();
   const dot = result.dots[dotKey];
   if (!dot) {
     container.innerHTML = '<div class="graph-loading">No graph data available</div>';
+    renderedDotKey = null;
     return;
   }
   
-  // If we already have the SVG for this exact dot string cached (TODO?), use it.
-  // For now, just request render.
+  // Skip re-render if the same dotKey is already displayed
+  if (dotKey === renderedDotKey && container.querySelector('svg')) return;
+  
+  var formula = document.getElementById('formula-input').value.trim();
+  var titledDot = addDotTitle(dot, formula, phase);
   
   container.innerHTML = '<div class="graph-loading">Rendering graph...</div><div class="graph-hint">Click to expand</div>';
-  requestSvg(dot).then(function(svg) {
+  renderedDotKey = null;
+  requestSvg(titledDot).then(function(svg) {
     injectGraphSvg(svg);
+    renderedDotKey = dotKey;
   }).catch(function(e) {
     container.innerHTML = '<div class="graph-loading">Error rendering graph: ' + e.message + '</div>';
+    renderedDotKey = null;
   });
 }
 
@@ -893,53 +885,72 @@ function getDownloadFilename(ext) {
   return 'tableau-' + currentPhase + (document.getElementById('opt-detailed').checked ? '-detailed' : '') + '.' + ext;
 }
 
-async function getGraphSvgString(forExport) {
-  if (!lastResult) return null;
-  var dot = lastResult.dots[getDotKey()];
-  if (!dot) return null;
-  // For export, inject the formula as a graph title
-  if (forExport) {
-    var formula = document.getElementById('formula-input').value.trim();
-    var phaseNames = { final: 'Final Tableau', initial: 'Initial Tableau', pretableau: 'Pretableau' };
-    var title = (formula ? formula + '  —  ' : '') + (phaseNames[currentPhase] || '');
-    dot = dot.replace('digraph tableau {', 'digraph tableau {\\n  label="' + escDotStr(title) + '"; labelloc=t; fontsize=16; fontname="Helvetica";');
-  }
-  
-  return requestSvg(dot).then(function(svgStr) {
-    if (forExport) {
-      // Add background: white to style attribute
-      // svgStr is a string, we need to inject the style attribute
-      if (svgStr.indexOf('style="') > -1) {
-        svgStr = svgStr.replace('style="', 'style="background: white; ');
-      } else {
-        svgStr = svgStr.replace('<svg ', '<svg style="background: white" ');
-      }
+function getGraphSvgString() {
+  // Clone the already-rendered SVG from graph-view (includes title, hidden by CSS)
+  var svg = document.querySelector('#graph-view svg');
+  if (!svg) return null;
+  var clone = svg.cloneNode(true);
+  // Preserve explicit width/height so Image can determine naturalWidth/naturalHeight
+  var wAttr = svg.getAttribute('width');
+  var hAttr = svg.getAttribute('height');
+  if (!wAttr || !hAttr) {
+    var vb = svg.viewBox.baseVal;
+    if (vb && vb.width && vb.height) {
+      clone.setAttribute('width', vb.width + 'pt');
+      clone.setAttribute('height', vb.height + 'pt');
     }
-    return svgStr;
-  });
+  }
+  // Add white background for export
+  clone.setAttribute('style', (clone.getAttribute('style') || '') + '; background: white;');
+  // Use XMLSerializer to ensure xmlns="http://www.w3.org/2000/svg" is included.
+  // outerHTML in HTML documents omits namespace declarations, producing invalid
+  // standalone SVG that browsers cannot load as an Image (breaks PNG export).
+  return new XMLSerializer().serializeToString(clone);
 }
 
 function escDotStr(s) {
   return s.replace(/\\\\/g, '\\\\\\\\').replace(/"/g, '\\\\"');
 }
 
-async function downloadSVG() {
-  var svgStr = await getGraphSvgString(true);
-  if (!svgStr) return;
-  var blob = new Blob([svgStr], { type: 'image/svg+xml' });
+function setButtonLoading(btn, loading) {
+  if (loading) {
+    btn._origHTML = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-sm"></span>';
+    btn.disabled = true;
+  } else {
+    btn.innerHTML = btn._origHTML || btn.innerHTML;
+    btn.disabled = false;
+  }
+}
+
+function triggerDownload(blob, filename) {
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url;
-  a.download = getDownloadFilename('svg');
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-async function downloadPNG() {
-  var svgStr = await getGraphSvgString(true);
+function downloadSVG() {
+  var btn = document.getElementById('dl-svg-btn');
+  var svgStr = getGraphSvgString();
   if (!svgStr) return;
+  setButtonLoading(btn, true);
+  try {
+    triggerDownload(new Blob([svgStr], { type: 'image/svg+xml' }), getDownloadFilename('svg'));
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+function downloadPNG() {
+  var btn = document.getElementById('dl-png-btn');
+  var svgStr = getGraphSvgString();
+  if (!svgStr) return;
+  setButtonLoading(btn, true);
   var blob = new Blob([svgStr], { type: 'image/svg+xml' });
   var url = URL.createObjectURL(blob);
   var img = new Image();
@@ -953,16 +964,14 @@ async function downloadPNG() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     canvas.toBlob(function(pngBlob) {
-      var pngUrl = URL.createObjectURL(pngBlob);
-      var a = document.createElement('a');
-      a.href = pngUrl;
-      a.download = getDownloadFilename('png');
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(pngUrl);
+      triggerDownload(pngBlob, getDownloadFilename('png'));
+      setButtonLoading(btn, false);
     }, 'image/png');
     URL.revokeObjectURL(url);
+  };
+  img.onerror = function() {
+    URL.revokeObjectURL(url);
+    setButtonLoading(btn, false);
   };
   img.src = url;
 }
@@ -977,65 +986,69 @@ let fsDragStartY = 0;
 let fsPanStartX = 0;
 let fsPanStartY = 0;
 
+function setupFsSvg(svg, viewport) {
+  // Reset transform
+  fsScale = 1;
+  fsPanX = 0;
+  fsPanY = 0;
+
+  // Get intrinsic size from width/height attributes (Viz.js uses "Xpt" units)
+  // parseFloat handles the "pt" suffix. Fall back to viewBox or defaults.
+  var sw, sh;
+  var wAttr = svg.getAttribute('width');
+  var hAttr = svg.getAttribute('height');
+  if (wAttr && hAttr) {
+    sw = parseFloat(wAttr);
+    sh = parseFloat(hAttr);
+  } else {
+    var vb = svg.viewBox.baseVal;
+    sw = (vb && vb.width) || 100;
+    sh = (vb && vb.height) || 100;
+  }
+
+  // Set explicit pixel dimensions (not %) so the SVG has a known size
+  // that we control entirely via CSS transform for pan/zoom
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  svg.style.width = sw + 'px';
+  svg.style.height = sh + 'px';
+  svg.style.overflow = 'visible';
+
+  const vw = viewport.clientWidth;
+  const vh = viewport.clientHeight;
+
+  // Initial scale to fit viewport
+  const scaleX = vw / sw;
+  const scaleY = vh / sh;
+  fsScale = Math.min(scaleX, scaleY) * 0.9;
+  
+  // Initial center
+  fsPanX = (vw - sw * fsScale) / 2;
+  fsPanY = (vh - sh * fsScale) / 2;
+
+  updateFsTransform();
+}
+
 function openFullscreen() {
   if (!lastResult) return;
-  const dot = lastResult.dots[getDotKey()];
-  if (!dot) return;
 
   const overlay = document.getElementById('graph-fullscreen');
   const viewport = document.getElementById('graph-fs-viewport');
-  const phaseNames = { final: 'Final Tableau', initial: 'Initial Tableau', pretableau: 'Pretableau' };
-  document.getElementById('graph-fs-title').textContent = phaseNames[currentPhase] || 'Graph';
+  document.getElementById('graph-fs-title').textContent = graphPhaseNames[currentPhase] || 'Graph';
 
   overlay.classList.add('open');
   document.body.style.overflow = 'hidden';
-  viewport.innerHTML = '<div class="graph-loading">Rendering graph...</div>';
 
-  // Render SVG into fullscreen viewport
-  requestSvg(dot).then(function(svgStr) {
+  // Reuse the SVG already rendered in graph-view by cloning it
+  var existingSvg = document.querySelector('#graph-view svg');
+  if (existingSvg) {
+    var clone = existingSvg.cloneNode(true);
     viewport.innerHTML = '';
-    // Inject via innerHTML or insertAdjacentHTML
-    viewport.insertAdjacentHTML('beforeend', svgStr);
-    
-    // Now get the SVG element from DOM
-    const svg = viewport.querySelector('svg');
-    if (!svg) return;
-
-    // Reset transform
-    fsScale = 1;
-    fsPanX = 0;
-    fsPanY = 0;
-
-    // Center the SVG
-    // Note: clientWidth/Height might be 0 if display:none, but overlay is 'open' so it should be visible
-    const vw = viewport.clientWidth;
-    const vh = viewport.clientHeight;
-    // For SVG string injected, we need to wait for layout? No, sync DOM update.
-    // SVG viewbox attributes are available.
-    const viewBox = svg.viewBox.baseVal;
-    const sw = viewBox ? viewBox.width : (svg.getAttribute('width') ? parseFloat(svg.getAttribute('width')) : 100);
-    const sh = viewBox ? viewBox.height : (svg.getAttribute('height') ? parseFloat(svg.getAttribute('height')) : 100);
-
-    // Remove fixed width/height so we control via transform
-    svg.removeAttribute('width');
-    svg.removeAttribute('height');
-    svg.style.width = '100%';
-    svg.style.height = '100%';
-    svg.style.overflow = 'visible';
-
-    // Initial scale to fit
-    const scaleX = vw / sw;
-    const scaleY = vh / sh;
-    fsScale = Math.min(scaleX, scaleY) * 0.9;
-    
-    // Initial center
-    fsPanX = (vw - sw * fsScale) / 2;
-    fsPanY = (vh - sh * fsScale) / 2;
-
-    updateFsTransform();
-  }).catch(function(e) {
-    viewport.innerHTML = '<div class="graph-loading">Error: ' + e.message + '</div>';
-  });
+    viewport.appendChild(clone);
+    setupFsSvg(clone, viewport);
+  } else {
+    viewport.innerHTML = '<div class="graph-loading">No graph available</div>';
+  }
 }
 
 function closeFullscreen() {
@@ -1453,9 +1466,11 @@ function displayResult(result, solveState) {
   currentPhase = 'final';
   document.querySelectorAll('.phase-tab').forEach(t => t.classList.remove('active'));
   document.querySelector('.phase-tab[data-phase="final"]').classList.add('active');
+  renderedDotKey = null; // Reset so renderGraph does not skip
   updateGraphOptionsVisibility();
   displayPhase(result, 'final');
-  // Graph rendering is handled separately via 'svg' message
+  // Render graph with title (title hidden in web view via CSS, visible on export/fullscreen)
+  renderGraph(result, 'final');
   
   // Update browser URL and history
   if (solveState && !solveState.fromHistory) {
@@ -1463,6 +1478,18 @@ function displayResult(result, solveState) {
     history.pushState(stateObj, '', buildUrl(solveState.formula, solveState.restrictedCuts));
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+}
+
+function restartWorker() {
+  if (window.__solverWorker) {
+    window.__solverWorker.terminate();
+  }
+  // Clear any pending render callbacks
+  for (var id in renderCallbacks) {
+    delete renderCallbacks[id];
+  }
+  window.__solverWorker = new Worker(window.__workerBlobUrl);
+  initWorkerHandler();
 }
 
 function solve(fromHistory) {
@@ -1473,6 +1500,11 @@ function solve(fromHistory) {
   const errorEl = document.getElementById('parse-error');
   errorEl.style.display = 'none';
 
+  // If a previous solve is in-flight, terminate and restart the worker
+  if (pendingSolve) {
+    restartWorker();
+  }
+
   showSolving(true);
   pendingSolve = { formula: formula, restrictedCuts: restrictedCuts, fromHistory: fromHistory };
   
@@ -1481,7 +1513,6 @@ function solve(fromHistory) {
       type: 'solve', formula: formula, restrictedCuts: restrictedCuts
     });
   } else {
-    // Fallback if worker failed to init (shouldn't happen)
     showSolveError("Solver worker not initialized. Reload page.");
   }
 }

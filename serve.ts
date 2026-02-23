@@ -1,10 +1,8 @@
-const file = Bun.file("dist/index.html");
-const html = await file.text();
-
 Bun.serve({
   hostname: "0.0.0.0",
   port: 3000,
-  fetch() {
+  async fetch() {
+    const html = await Bun.file("dist/index.html").text();
     return new Response(html, {
       headers: { "Content-Type": "text/html" },
     });

@@ -41,13 +41,6 @@ ctx.onmessage = async (e: MessageEvent) => {
 
       ctx.postMessage({ type: 'result', result: serialized });
 
-      // Pre-render the final graph (default view)
-      ctx.postMessage({ type: 'status', stage: 'Rendering graph...' });
-      const viz = await getViz();
-      const dot = serialized.dots.final;
-      const svg = await viz.renderString(dot, { format: 'svg' });
-      ctx.postMessage({ type: 'svg', svg, id: 'initial-graph' });
-
     } catch (err: any) {
       ctx.postMessage({ type: 'error', message: err.message });
     }

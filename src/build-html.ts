@@ -31,7 +31,8 @@ const solverScript = `
 // Bundled CMAEL(CD) solver worker
 var __workerCode = ${JSON.stringify(bundleCode)};
 var __workerBlob = new Blob([__workerCode], {type: 'application/javascript'});
-window.__solverWorker = new Worker(URL.createObjectURL(__workerBlob));
+window.__workerBlobUrl = URL.createObjectURL(__workerBlob);
+window.__solverWorker = new Worker(window.__workerBlobUrl);
 </script>
 `;
 
