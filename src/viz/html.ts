@@ -1013,6 +1013,20 @@ function clearInput() {
   updateClearBtn();
   input.focus();
   document.getElementById('parse-error').style.display = 'none';
+  var section = document.getElementById('result-section');
+  if (section) section.style.display = 'none';
+  var empty = document.getElementById('right-empty');
+  if (empty) empty.style.display = '';
+  // Reset URL to bare path
+  history.pushState(null, '', window.location.pathname);
+}
+
+function buildUrl(formula, restrictedCuts) {
+  var params = new URLSearchParams();
+  if (formula) params.set('formula', formula);
+  if (!restrictedCuts) params.set('rc', '0');
+  var qs = params.toString();
+  return window.location.pathname + (qs ? '?' + qs : '');
 }
 
 function updateClearBtn() {
@@ -1029,15 +1043,51 @@ function renderLatex(container, tex) {
   }
 }
 
-// Render all placeholders on load
+// Render all placeholders on load; check URL for initial formula
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.katex-placeholder').forEach(function(el) {
     renderLatex(el, el.dataset.tex);
   });
-  // Focus formula input and track its value for clear button
   var input = document.getElementById('formula-input');
-  input.focus();
   input.addEventListener('input', updateClearBtn);
+
+  // Check URL for ?formula= parameter
+  var params = new URLSearchParams(window.location.search);
+  var initFormula = params.get('formula');
+  if (initFormula) {
+    input.value = initFormula;
+    if (params.get('rc') === '0') {
+      document.getElementById('restricted-cuts').checked = false;
+    }
+    updateClearBtn();
+    // Replace current history entry with state so popstate works
+    var rc = document.getElementById('restricted-cuts').checked;
+    history.replaceState({ formula: initFormula, rc: rc }, '', buildUrl(initFormula, rc));
+    solve(true);
+  } else {
+    input.focus();
+  }
+});
+
+// Navigate back/forward between previously solved formulas
+window.addEventListener('popstate', function(e) {
+  var state = e.state;
+  if (state && state.formula) {
+    document.getElementById('formula-input').value = state.formula;
+    document.getElementById('restricted-cuts').checked = state.rc !== false;
+    updateClearBtn();
+    solve(true);
+  } else {
+    // No formula — reset to empty state
+    document.getElementById('formula-input').value = '';
+    updateClearBtn();
+    document.getElementById('parse-error').style.display = 'none';
+    var section = document.getElementById('result-section');
+    if (section) section.style.display = 'none';
+    var empty = document.getElementById('right-empty');
+    if (empty) empty.style.display = '';
+    document.getElementById('formula-input').focus();
+  }
 });
 
 // Enter key to solve
@@ -1213,7 +1263,7 @@ function renderEliminationTrace(result) {
   });
 }
 
-function solve() {
+function solve(fromHistory) {
   const formula = document.getElementById('formula-input').value.trim();
   if (!formula) return;
 
@@ -1267,7 +1317,15 @@ function solve() {
       renderGraph(result, 'final');
     }
 
-    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Update browser URL and history
+    if (!fromHistory) {
+      var stateObj = { formula: formula, rc: restrictedCuts };
+      history.pushState(stateObj, '', buildUrl(formula, restrictedCuts));
+    }
+
+    if (!fromHistory) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   } catch(e) {
     errorEl.textContent = e.message;
     errorEl.style.display = 'block';
